@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "993662947492",
+    "project_id": "iskorko-b5601",
+    "storage_bucket": "iskorko-b5601.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:993662947492:android:3bfb7027a7919d6eb5d631",
+        "android_client_info": {
+          "package_name": "com.example.iskorko"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCjFQkCuHg4pcWUGm4iZa6gYMMoKQGXhrU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
