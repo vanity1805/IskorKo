@@ -914,17 +914,20 @@ class StudentDashboardViewModel : ViewModel() {
     private fun loadNotifications() {
         val userId = auth.currentUser?.uid ?: return
         
+        Log.d("Notifications", "Loading notifications for student: $userId")
+        
         notificationsListener?.remove()
+        // Simple query without orderBy to avoid needing composite index
         notificationsListener = db.collection("notifications")
             .whereEqualTo("userId", userId)
-            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
-            .limit(50)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.e("Notifications", "Error loading notifications: ${error.message}")
                     generateNotificationsFromActivity()
                     return@addSnapshotListener
                 }
+                
+                Log.d("Notifications", "Received ${snapshot?.size() ?: 0} notifications")
                 
                 if (snapshot == null || snapshot.isEmpty) {
                     generateNotificationsFromActivity()
@@ -933,9 +936,16 @@ class StudentDashboardViewModel : ViewModel() {
                 
                 val notificationsList = snapshot.documents.mapNotNull { doc ->
                     try {
+                        val typeStr = doc.getString("type") ?: "SYSTEM"
+                        val type = try {
+                            NotificationType.valueOf(typeStr)
+                        } catch (e: Exception) {
+                            NotificationType.SYSTEM
+                        }
+                        
                         NotificationItem(
                             id = doc.id,
-                            type = NotificationType.valueOf(doc.getString("type") ?: "SYSTEM"),
+                            type = type,
                             title = doc.getString("title") ?: "",
                             message = doc.getString("message") ?: "",
                             timestamp = doc.getLong("timestamp") ?: 0L,
@@ -943,9 +953,12 @@ class StudentDashboardViewModel : ViewModel() {
                             relatedId = doc.getString("relatedId")
                         )
                     } catch (e: Exception) {
+                        Log.e("Notifications", "Error parsing notification: ${e.message}")
                         null
                     }
-                }
+                }.sortedByDescending { it.timestamp }.take(50) // Sort locally
+                
+                Log.d("Notifications", "Parsed ${notificationsList.size} notifications")
                 
                 notifications.value = notificationsList
                 unreadNotificationCount.value = notificationsList.count { !it.isRead }
