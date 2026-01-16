@@ -302,10 +302,23 @@ class StudentDashboardViewModel : ViewModel() {
                 }
                 
                 // Add student to class
+                val className = classDoc.getString("className") ?: "Class"
+                val professorId = classDoc.getString("professorId") ?: ""
+                
                 db.collection("classes")
                     .document(classDoc.id)
                     .update("studentIds", FieldValue.arrayUnion(uid))
                     .addOnSuccessListener {
+                        // Create notification for professor
+                        if (professorId.isNotEmpty()) {
+                            createNotificationForUser(
+                                userId = professorId,
+                                type = "NEW_STUDENT",
+                                title = "New Student Joined",
+                                message = "${studentName.value} joined $className",
+                                relatedId = classDoc.id
+                            )
+                        }
                         onSuccess()
                     }
                     .addOnFailureListener { e ->
@@ -342,6 +355,33 @@ class StudentDashboardViewModel : ViewModel() {
     fun logout(onSuccess: () -> Unit) {
         auth.signOut()
         onSuccess()
+    }
+    
+    private fun createNotificationForUser(
+        userId: String,
+        type: String,
+        title: String,
+        message: String,
+        relatedId: String? = null
+    ) {
+        val notificationData = hashMapOf(
+            "userId" to userId,
+            "type" to type,
+            "title" to title,
+            "message" to message,
+            "timestamp" to System.currentTimeMillis(),
+            "isRead" to false,
+            "relatedId" to relatedId
+        )
+        
+        db.collection("notifications")
+            .add(notificationData)
+            .addOnSuccessListener {
+                Log.d("Notifications", "Notification created for user $userId")
+            }
+            .addOnFailureListener { e ->
+                Log.e("Notifications", "Failed to create notification: ${e.message}")
+            }
     }
     
     // ==================== PROFILE FUNCTIONALITY ====================

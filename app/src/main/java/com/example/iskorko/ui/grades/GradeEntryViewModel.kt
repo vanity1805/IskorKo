@@ -1,5 +1,6 @@
 package com.example.iskorko.ui.grades
 
+import android.util.Log
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import com.google.firebase.firestore.FirebaseFirestore
@@ -177,6 +178,8 @@ class GradeEntryViewModel : ViewModel() {
             return
         }
         
+        val percentage = if (totalQuestions.value > 0) (score.toFloat() / totalQuestions.value * 100).toInt() else 0
+        
         // Check if grade already exists
         db.collection("grades")
             .whereEqualTo("examId", examId)
@@ -196,6 +199,14 @@ class GradeEntryViewModel : ViewModel() {
                     db.collection("grades")
                         .add(gradeData)
                         .addOnSuccessListener {
+                            // Create notification for student
+                            createNotificationForStudent(
+                                studentId = studentId,
+                                examName = examName.value,
+                                score = score,
+                                totalQuestions = totalQuestions.value,
+                                percentage = percentage
+                            )
                             onSuccess()
                         }
                         .addOnFailureListener { e ->
@@ -208,6 +219,15 @@ class GradeEntryViewModel : ViewModel() {
                         .document(gradeId)
                         .update(gradeData as Map<String, Any>)
                         .addOnSuccessListener {
+                            // Create notification for student (grade updated)
+                            createNotificationForStudent(
+                                studentId = studentId,
+                                examName = examName.value,
+                                score = score,
+                                totalQuestions = totalQuestions.value,
+                                percentage = percentage,
+                                isUpdate = true
+                            )
                             onSuccess()
                         }
                         .addOnFailureListener { e ->
@@ -217,6 +237,34 @@ class GradeEntryViewModel : ViewModel() {
             }
             .addOnFailureListener { e ->
                 onError("Error: ${e.message}")
+            }
+    }
+    
+    private fun createNotificationForStudent(
+        studentId: String,
+        examName: String,
+        score: Int,
+        totalQuestions: Int,
+        percentage: Int,
+        isUpdate: Boolean = false
+    ) {
+        val notificationData = hashMapOf(
+            "userId" to studentId,
+            "type" to "NEW_GRADE",
+            "title" to if (isUpdate) "Grade Updated" else "New Grade Available",
+            "message" to "You scored $score/$totalQuestions ($percentage%) on $examName",
+            "timestamp" to System.currentTimeMillis(),
+            "isRead" to false,
+            "relatedId" to null
+        )
+        
+        db.collection("notifications")
+            .add(notificationData)
+            .addOnSuccessListener {
+                Log.d("Notifications", "Grade notification created for student $studentId")
+            }
+            .addOnFailureListener { e ->
+                Log.e("Notifications", "Failed to create grade notification: ${e.message}")
             }
     }
     
