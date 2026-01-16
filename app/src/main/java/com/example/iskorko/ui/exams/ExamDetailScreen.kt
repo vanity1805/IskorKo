@@ -1,6 +1,7 @@
 package com.example.iskorko.ui.exams
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,6 +31,7 @@ fun ExamDetailScreen(
 ) {
     val context = LocalContext.current
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showEditAnswerKeyDialog by remember { mutableStateOf(false) }
     
     LaunchedEffect(examId) {
         viewModel.loadExamDetails(examId)
@@ -129,14 +131,28 @@ fun ExamDetailScreen(
                             .fillMaxWidth()
                             .padding(16.dp)
                     ) {
-                        Text(
-                            text = "Answer Key",
-                            fontFamily = NeueMachina,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Answer Key",
+                                fontFamily = NeueMachina,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            
+                            IconButton(onClick = { showEditAnswerKeyDialog = true }) {
+                                Icon(
+                                    Icons.Filled.Edit,
+                                    contentDescription = "Edit Answer Key",
+                                    tint = Color(0xFF800202)
+                                )
+                            }
+                        }
                         
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         
                         Column(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -241,6 +257,27 @@ fun ExamDetailScreen(
             }
         )
     }
+    
+    // Edit Answer Key Dialog
+    if (showEditAnswerKeyDialog) {
+        EditAnswerKeyDialog(
+            currentAnswerKey = viewModel.answerKey.value,
+            onDismiss = { showEditAnswerKeyDialog = false },
+            onSave = { newAnswerKey ->
+                viewModel.updateAnswerKey(
+                    examId = examId,
+                    newAnswerKey = newAnswerKey,
+                    onSuccess = {
+                        Toast.makeText(context, "Answer key updated", Toast.LENGTH_SHORT).show()
+                        showEditAnswerKeyDialog = false
+                    },
+                    onError = { error ->
+                        Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+        )
+    }
 }
 
 @Composable
@@ -276,4 +313,103 @@ fun AnswerKeyRow(questionNumber: Int, answer: String) {
             }
         }
     }
+}
+
+@Composable
+fun EditAnswerKeyDialog(
+    currentAnswerKey: List<String>,
+    onDismiss: () -> Unit,
+    onSave: (List<String>) -> Unit
+) {
+    // Use a List<String> instead of MutableList for proper state updates
+    var editedAnswerKey by remember(currentAnswerKey) { 
+        mutableStateOf(currentAnswerKey.map { it.uppercase().trim() }) 
+    }
+    val answerOptions = listOf("A", "B", "C", "D", "E")
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Edit Answer Key",
+                fontFamily = NeueMachina,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    text = "Tap on an answer to change it",
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                
+                editedAnswerKey.forEachIndexed { index, currentAnswer ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Q${index + 1}",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.width(40.dp)
+                        )
+                        
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            answerOptions.forEach { option ->
+                                val isSelected = currentAnswer.uppercase() == option
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            color = if (isSelected) Color(0xFF800202) else Color(0xFFE0E0E0),
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable {
+                                            // Create a new list with the updated value
+                                            editedAnswerKey = editedAnswerKey.mapIndexed { i, ans ->
+                                                if (i == index) option else ans
+                                            }
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = option,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) Color.White else Color.Black
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(editedAnswerKey) },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF800202))
+            ) {
+                Text("Save Changes")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

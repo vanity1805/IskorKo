@@ -98,4 +98,30 @@ class ExamDetailViewModel : ViewModel() {
                     }
             }
     }
+    
+    fun updateAnswerKey(
+        examId: String,
+        newAnswerKey: List<String>,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        if (newAnswerKey.isEmpty()) {
+            onError("Answer key cannot be empty")
+            return
+        }
+        
+        db.collection("exams")
+            .document(examId)
+            .update("answerKey", newAnswerKey)
+            .addOnSuccessListener {
+                // Update local state
+                answerKey.value = newAnswerKey
+                Log.d("ExamDetail", "Answer key updated successfully")
+                onSuccess()
+            }
+            .addOnFailureListener { e ->
+                Log.e("ExamDetail", "Failed to update answer key: ${e.message}")
+                onError("Failed to update answer key: ${e.message}")
+            }
+    }
 }
