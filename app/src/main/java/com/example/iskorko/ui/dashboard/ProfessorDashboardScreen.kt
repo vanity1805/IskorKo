@@ -1,5 +1,9 @@
 package com.example.iskorko.ui.dashboard
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -26,6 +30,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import com.example.iskorko.ui.components.IskorKoToastHost
+import com.example.iskorko.ui.components.rememberToastState
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,7 +46,10 @@ fun ProfessorDashboardScreen(
     viewModel: ProfessorDashboardViewModel = viewModel()
 ) {
     var selectedTab by remember { mutableStateOf(0) }
+    val toastState = rememberToastState()
+    var showNotifications by remember { mutableStateOf(false) }
     
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -55,11 +69,25 @@ fun ProfessorDashboardScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* Notifications */ }) {
-                        Icon(Icons.Filled.Notifications, contentDescription = "Notifications")
-                    }
-                    IconButton(onClick = { selectedTab = 2 }) {
-                        Icon(Icons.Filled.AccountCircle, contentDescription = "Profile")
+                    BadgedBox(
+                        badge = {
+                            if (viewModel.unreadNotificationCount.value > 0) {
+                                Badge(
+                                    containerColor = Color(0xFF800202)
+                                ) {
+                                    Text(
+                                        text = if (viewModel.unreadNotificationCount.value > 9) "9+" 
+                                               else viewModel.unreadNotificationCount.value.toString(),
+                                        color = Color.White,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                        }
+                    ) {
+                        IconButton(onClick = { showNotifications = true }) {
+                            Icon(Icons.Filled.Notifications, contentDescription = "Notifications")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -118,6 +146,7 @@ fun ProfessorDashboardScreen(
                 1 -> GradesTab(viewModel = viewModel)
                 2 -> ProfileTab(
                     viewModel = viewModel,
+                    toastState = toastState,
                     onLogout = {
                         viewModel.logout {
                             navController.navigate("chooseProfile") {
@@ -125,6 +154,202 @@ fun ProfessorDashboardScreen(
                             }
                         }
                     }
+                )
+            }
+        }
+    }
+    
+    // Notifications Bottom Sheet
+    if (showNotifications) {
+        NotificationsBottomSheet(
+            notifications = viewModel.notifications.value,
+            onDismiss = { showNotifications = false },
+            onMarkAsRead = { viewModel.markNotificationAsRead(it) },
+            onMarkAllAsRead = { viewModel.markAllNotificationsAsRead() }
+        )
+    }
+    
+    // Toast overlay
+    IskorKoToastHost(state = toastState)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NotificationsBottomSheet(
+    notifications: List<NotificationItem>,
+    onDismiss: () -> Unit,
+    onMarkAsRead: (String) -> Unit,
+    onMarkAllAsRead: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Notifications",
+                    fontFamily = NeueMachina,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                if (notifications.any { !it.isRead }) {
+                    TextButton(onClick = onMarkAllAsRead) {
+                        Text("Mark all as read", color = Color(0xFF800202))
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            if (notifications.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            Icons.Filled.Notifications,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = Color.LightGray
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "No notifications yet",
+                            color = Color.Gray,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(notifications) { notification ->
+                        NotificationCard(
+                            notification = notification,
+                            onClick = { onMarkAsRead(notification.id) }
+                        )
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+fun NotificationCard(
+    notification: NotificationItem,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = if (notification.isRead) Color(0xFFF5F5F5) else Color(0xFFFFF3F3)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (notification.isRead) 0.dp else 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(12.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.Top
+        ) {
+            // Icon based on notification type
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        color = when (notification.type) {
+                            NotificationType.NEW_GRADE -> Color(0xFF4CAF50)
+                            NotificationType.NEW_STUDENT -> Color(0xFF2196F3)
+                            NotificationType.CLASS_UPDATE -> Color(0xFF9C27B0)
+                            NotificationType.EXAM_CREATED -> Color(0xFFFF9800)
+                            NotificationType.SYSTEM -> Color(0xFF607D8B)
+                        }.copy(alpha = 0.1f),
+                        shape = CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = when (notification.type) {
+                        NotificationType.NEW_GRADE -> Icons.Filled.Assessment
+                        NotificationType.NEW_STUDENT -> Icons.Filled.PersonAdd
+                        NotificationType.CLASS_UPDATE -> Icons.Filled.Class
+                        NotificationType.EXAM_CREATED -> Icons.Filled.Quiz
+                        NotificationType.SYSTEM -> Icons.Filled.Info
+                    },
+                    contentDescription = null,
+                    tint = when (notification.type) {
+                        NotificationType.NEW_GRADE -> Color(0xFF4CAF50)
+                        NotificationType.NEW_STUDENT -> Color(0xFF2196F3)
+                        NotificationType.CLASS_UPDATE -> Color(0xFF9C27B0)
+                        NotificationType.EXAM_CREATED -> Color(0xFFFF9800)
+                        NotificationType.SYSTEM -> Color(0xFF607D8B)
+                    },
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.width(12.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = notification.title,
+                        fontWeight = if (notification.isRead) FontWeight.Normal else FontWeight.Bold,
+                        fontSize = 14.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = notification.getTimeAgo(),
+                        fontSize = 11.sp,
+                        color = Color.Gray
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Text(
+                    text = notification.message,
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                    maxLines = 2
+                )
+            }
+            
+            if (!notification.isRead) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(Color(0xFF800202), CircleShape)
                 )
             }
         }
@@ -347,53 +572,89 @@ fun GradesTab(viewModel: ProfessorDashboardViewModel) {
     var showFilterMenu by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
     var selectedGrade by remember { mutableStateOf<GradeItem?>(null) }
+    var isContentVisible by remember { mutableStateOf(false) }
+    
+    // Trigger enter animation
+    LaunchedEffect(Unit) {
+        isContentVisible = true
+    }
     
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFFEDEDED))
     ) {
-        // Statistics Overview
-        GradeStatisticsSection(viewModel.gradeStatistics.value)
+        // Animated Statistics Overview (slides down from top)
+        AnimatedVisibility(
+            visible = isContentVisible,
+            enter = slideInVertically(
+                initialOffsetY = { fullHeight -> -fullHeight },
+                animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
+            )
+        ) {
+            GradeStatisticsSection(viewModel.gradeStatistics.value)
+        }
         
-        // View Mode Tabs
-        ViewModeTabs(
-            selectedMode = viewModel.selectedViewMode.value,
-            onModeSelected = { viewModel.setViewMode(it) }
-        )
-        
-        // Search and Filter Bar
-        SearchAndFilterBar(
-            searchQuery = viewModel.searchQuery.value,
-            onSearchChange = { viewModel.setSearchQuery(it) },
-            onFilterClick = { showFilterMenu = true },
-            onSortClick = { showSortMenu = true },
-            hasFilters = viewModel.selectedClassFilter.value != null || 
-                        viewModel.selectedExamFilter.value != null
-        )
-        
-        // Content based on view mode
-        when (viewModel.selectedViewMode.value) {
-            GradeViewMode.ALL_GRADES -> AllGradesView(
-                grades = viewModel.getFilteredAndSortedGrades(),
-                isLoading = viewModel.isLoadingGrades.value,
-                onGradeClick = { selectedGrade = it }
+        // Animated Content Container (slides up from bottom)
+        AnimatedVisibility(
+            visible = isContentVisible,
+            enter = slideInVertically(
+                initialOffsetY = { fullHeight -> fullHeight },
+                animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
             )
-            GradeViewMode.BY_CLASS -> ByClassView(
-                classSummaries = viewModel.classSummaries.value,
-                isLoading = viewModel.isLoadingGrades.value,
-                onGradeClick = { selectedGrade = it }
-            )
-            GradeViewMode.BY_EXAM -> ByExamView(
-                examSummaries = viewModel.examSummaries.value,
-                isLoading = viewModel.isLoadingGrades.value,
-                onGradeClick = { selectedGrade = it }
-            )
-            GradeViewMode.BY_STUDENT -> ByStudentView(
-                grades = viewModel.getFilteredAndSortedGrades(),
-                isLoading = viewModel.isLoadingGrades.value,
-                onGradeClick = { selectedGrade = it }
-            )
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
+                color = Color.White,
+                shadowElevation = 8.dp
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    // View Mode Tabs
+                    ViewModeTabs(
+                        selectedMode = viewModel.selectedViewMode.value,
+                        onModeSelected = { viewModel.setViewMode(it) }
+                    )
+                    
+                    // Search and Filter Bar
+                    SearchAndFilterBar(
+                        searchQuery = viewModel.searchQuery.value,
+                        onSearchChange = { viewModel.setSearchQuery(it) },
+                        onFilterClick = { showFilterMenu = true },
+                        onSortClick = { showSortMenu = true },
+                        hasFilters = viewModel.selectedClassFilter.value != null || 
+                                    viewModel.selectedExamFilter.value != null
+                    )
+                    
+                    // Content based on view mode
+                    when (viewModel.selectedViewMode.value) {
+                        GradeViewMode.ALL_GRADES -> AllGradesView(
+                            grades = viewModel.getFilteredAndSortedGrades(),
+                            isLoading = viewModel.isLoadingGrades.value,
+                            onGradeClick = { selectedGrade = it }
+                        )
+                        GradeViewMode.BY_CLASS -> ByClassView(
+                            classSummaries = viewModel.classSummaries.value,
+                            isLoading = viewModel.isLoadingGrades.value,
+                            onGradeClick = { selectedGrade = it }
+                        )
+                        GradeViewMode.BY_EXAM -> ByExamView(
+                            examSummaries = viewModel.examSummaries.value,
+                            isLoading = viewModel.isLoadingGrades.value,
+                            onGradeClick = { selectedGrade = it }
+                        )
+                        GradeViewMode.BY_STUDENT -> ByStudentView(
+                            grades = viewModel.getFilteredAndSortedGrades(),
+                            isLoading = viewModel.isLoadingGrades.value,
+                            onGradeClick = { selectedGrade = it }
+                        )
+                    }
+                }
+            }
         }
     }
     
@@ -742,6 +1003,7 @@ fun ByClassView(
 @Composable
 fun ClassGradesCard(summary: ClassGradesSummary, onGradeClick: (GradeItem) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    var showAll by remember { mutableStateOf(false) }
     
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -795,7 +1057,9 @@ fun ClassGradesCard(summary: ClassGradesSummary, onGradeClick: (GradeItem) -> Un
                 Divider()
                 Spacer(modifier = Modifier.height(12.dp))
                 
-                summary.grades.take(5).forEach { grade ->
+                val gradesToShow = if (showAll) summary.grades else summary.grades.take(5)
+                
+                gradesToShow.forEach { grade ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -825,10 +1089,13 @@ fun ClassGradesCard(summary: ClassGradesSummary, onGradeClick: (GradeItem) -> Un
                 
                 if (summary.grades.size > 5) {
                     Text(
-                        text = "+${summary.grades.size - 5} more",
+                        text = if (showAll) "Show less" else "+${summary.grades.size - 5} more",
                         fontSize = 12.sp,
-                        color = Color.Gray,
-                        modifier = Modifier.padding(top = 8.dp)
+                        color = Color(0xFF800202),
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier
+                            .padding(top = 8.dp)
+                            .clickable { showAll = !showAll }
                     )
                 }
             }
@@ -867,6 +1134,7 @@ fun ByExamView(
 @Composable
 fun ExamGradesCard(summary: ExamGradesSummary, onGradeClick: (GradeItem) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    var showAll by remember { mutableStateOf(false) }
     
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -905,18 +1173,30 @@ fun ExamGradesCard(summary: ExamGradesSummary, onGradeClick: (GradeItem) -> Unit
                             color = Color(0xFF800202),
                             fontWeight = FontWeight.Bold
                         )
-                        Text(text = " · ", fontSize = 11.sp, color = Color.Gray)
-                        Text(
-                            text = "High: ${summary.highestScore}",
-                            fontSize = 11.sp,
-                            color = Color(0xFF4CAF50)
-                        )
-                        Text(text = " · ", fontSize = 11.sp, color = Color.Gray)
-                        Text(
-                            text = "Low: ${summary.lowestScore}",
-                            fontSize = 11.sp,
-                            color = Color(0xFFE53935)
-                        )
+                        
+                        // Only show High/Low if there's variation in scores
+                        if (summary.highestScore != summary.lowestScore) {
+                            Text(text = " · ", fontSize = 11.sp, color = Color.Gray)
+                            Text(
+                                text = "High: ${summary.highestScore}",
+                                fontSize = 11.sp,
+                                color = Color(0xFF4CAF50)
+                            )
+                            Text(text = " · ", fontSize = 11.sp, color = Color.Gray)
+                            Text(
+                                text = "Low: ${summary.lowestScore}",
+                                fontSize = 11.sp,
+                                color = Color(0xFFE53935)
+                            )
+                        } else if (summary.studentsTaken > 0) {
+                            Text(text = " · ", fontSize = 11.sp, color = Color.Gray)
+                            Text(
+                                text = "All scored: ${summary.highestScore}",
+                                fontSize = 11.sp,
+                                color = Color(0xFF4CAF50),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
                 
@@ -936,7 +1216,10 @@ fun ExamGradesCard(summary: ExamGradesSummary, onGradeClick: (GradeItem) -> Unit
                 Divider()
                 Spacer(modifier = Modifier.height(12.dp))
                 
-                summary.grades.sortedByDescending { it.percentage }.take(10).forEach { grade ->
+                val sortedGrades = summary.grades.sortedByDescending { it.percentage }
+                val gradesToShow = if (showAll) sortedGrades else sortedGrades.take(10)
+                
+                gradesToShow.forEach { grade ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -966,10 +1249,13 @@ fun ExamGradesCard(summary: ExamGradesSummary, onGradeClick: (GradeItem) -> Unit
                 
                 if (summary.grades.size > 10) {
                     Text(
-                        text = "+${summary.grades.size - 10} more",
+                        text = if (showAll) "Show less" else "+${summary.grades.size - 10} more",
                         fontSize = 12.sp,
-                        color = Color.Gray,
-                        modifier = Modifier.padding(top = 8.dp)
+                        color = Color(0xFF800202),
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier
+                            .padding(top = 8.dp)
+                            .clickable { showAll = !showAll }
                     )
                 }
             }
@@ -1645,16 +1931,38 @@ fun StatBox(label: String, value: String, color: Color) {
 }
 
 @Composable
-fun ProfileTab(viewModel: ProfessorDashboardViewModel, onLogout: () -> Unit) {
+fun ProfileTab(
+    viewModel: ProfessorDashboardViewModel, 
+    toastState: com.example.iskorko.ui.components.ToastState,
+    onLogout: () -> Unit
+) {
     var showEditProfileDialog by remember { mutableStateOf(false) }
     var showChangePasswordDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showLogoutConfirmDialog by remember { mutableStateOf(false) }
+    var showPhotoOptionsDialog by remember { mutableStateOf(false) }
     
     val professorName = viewModel.professorName.value
     val professorEmail = viewModel.professorEmail.value
+    val profilePictureUrl = viewModel.profilePictureUrl.value
+    val isUploadingPhoto = viewModel.isUploadingPhoto.value
     val stats = viewModel.gradeStatistics.value
     val classes = viewModel.classes.value
+    
+    // Image picker launcher
+    val context = LocalContext.current
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        uri?.let {
+            viewModel.uploadProfilePicture(
+                imageUri = it,
+                context = context,
+                onSuccess = { toastState.showSuccess("Profile picture updated!") },
+                onError = { error -> toastState.showError(error) }
+            )
+        }
+    }
     
     Column(
         modifier = Modifier
@@ -1675,24 +1983,103 @@ fun ProfileTab(viewModel: ProfessorDashboardViewModel, onLogout: () -> Unit) {
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Avatar
+                // Avatar with edit button
                 Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .background(
-                            brush = androidx.compose.ui.graphics.Brush.linearGradient(
-                                colors = listOf(Color(0xFF800202), Color(0xFFB71C1C))
-                            ),
-                            shape = CircleShape
-                        ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = professorName.firstOrNull()?.uppercase() ?: "P",
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
+                    if (isUploadingPhoto) {
+                        Box(
+                            modifier = Modifier
+                                .size(100.dp)
+                                .background(Color.LightGray.copy(alpha = 0.5f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                color = Color(0xFF800202),
+                                modifier = Modifier.size(40.dp)
+                            )
+                        }
+                    } else if (profilePictureUrl != null && profilePictureUrl.startsWith("data:image")) {
+                        // Decode Base64 image
+                        val bitmap = remember(profilePictureUrl) {
+                            try {
+                                val base64Data = profilePictureUrl.substringAfter("base64,")
+                                val decodedBytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+                                android.graphics.BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+                            } catch (e: Exception) {
+                                null
+                            }
+                        }
+                        if (bitmap != null) {
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "Profile Picture",
+                                modifier = Modifier
+                                    .size(100.dp)
+                                    .clip(CircleShape)
+                                    .clickable { showPhotoOptionsDialog = true },
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                        } else {
+                            // Fallback if decode fails
+                            Box(
+                                modifier = Modifier
+                                    .size(100.dp)
+                                    .background(
+                                        brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                                            colors = listOf(Color(0xFF800202), Color(0xFFB71C1C))
+                                        ),
+                                        shape = CircleShape
+                                    )
+                                    .clickable { showPhotoOptionsDialog = true },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = professorName.firstOrNull()?.uppercase() ?: "P",
+                                    fontSize = 36.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(100.dp)
+                                .background(
+                                    brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                                        colors = listOf(Color(0xFF800202), Color(0xFFB71C1C))
+                                    ),
+                                    shape = CircleShape
+                                )
+                                .clickable { showPhotoOptionsDialog = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = professorName.firstOrNull()?.uppercase() ?: "P",
+                                fontSize = 36.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
+                    
+                    // Camera edit button
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(32.dp)
+                            .background(Color(0xFF800202), CircleShape)
+                            .clickable { showPhotoOptionsDialog = true },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.CameraAlt,
+                            contentDescription = "Change Photo",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
                 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1888,8 +2275,11 @@ fun ProfileTab(viewModel: ProfessorDashboardViewModel, onLogout: () -> Unit) {
             onSave = { newName ->
                 viewModel.updateProfile(
                     newName = newName,
-                    onSuccess = { showEditProfileDialog = false },
-                    onError = { /* Show error toast */ }
+                    onSuccess = { 
+                        showEditProfileDialog = false 
+                        toastState.showSuccess("Profile updated successfully!")
+                    },
+                    onError = { error -> toastState.showError(error) }
                 )
             }
         )
@@ -1903,9 +2293,61 @@ fun ProfileTab(viewModel: ProfessorDashboardViewModel, onLogout: () -> Unit) {
                 viewModel.changePassword(
                     currentPassword = currentPassword,
                     newPassword = newPassword,
-                    onSuccess = { showChangePasswordDialog = false },
-                    onError = { /* Show error toast */ }
+                    onSuccess = { 
+                        showChangePasswordDialog = false
+                        toastState.showSuccess("Password changed successfully!")
+                    },
+                    onError = { error -> toastState.showError(error) }
                 )
+            }
+        )
+    }
+    
+    // Photo Options Dialog
+    if (showPhotoOptionsDialog) {
+        AlertDialog(
+            onDismissRequest = { showPhotoOptionsDialog = false },
+            title = {
+                Text(
+                    text = "Profile Photo",
+                    fontFamily = NeueMachina,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column {
+                    ListItem(
+                        headlineContent = { Text("Choose from Gallery") },
+                        leadingContent = {
+                            Icon(Icons.Filled.PhotoLibrary, contentDescription = null, tint = Color(0xFF800202))
+                        },
+                        modifier = Modifier.clickable {
+                            showPhotoOptionsDialog = false
+                            imagePickerLauncher.launch("image/*")
+                        }
+                    )
+                    if (profilePictureUrl != null) {
+                        ListItem(
+                            headlineContent = { Text("Remove Photo", color = Color.Red) },
+                            leadingContent = {
+                                Icon(Icons.Filled.Delete, contentDescription = null, tint = Color.Red)
+                            },
+                            modifier = Modifier.clickable {
+                                showPhotoOptionsDialog = false
+                                viewModel.removeProfilePicture(
+                                    onSuccess = { toastState.showSuccess("Profile photo removed") },
+                                    onError = { error -> toastState.showError(error) }
+                                )
+                            }
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showPhotoOptionsDialog = false }) {
+                    Text("Cancel")
+                }
             }
         )
     }
@@ -2350,25 +2792,13 @@ fun AboutDialog(onDismiss: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // App Logo
-                Box(
+                Image(
+                    painter = androidx.compose.ui.res.painterResource(id = com.example.iskorko.R.drawable.logo_iskorko),
+                    contentDescription = "IskorKo Logo",
                     modifier = Modifier
-                        .size(80.dp)
-                        .background(
-                            brush = androidx.compose.ui.graphics.Brush.linearGradient(
-                                colors = listOf(Color(0xFF800202), Color(0xFFB71C1C))
-                            ),
-                            shape = RoundedCornerShape(20.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "IK",
-                        fontFamily = NeueMachina,
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
+                        .size(100.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                )
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
@@ -2388,10 +2818,11 @@ fun AboutDialog(onDismiss: () -> Unit) {
                 Spacer(modifier = Modifier.height(24.dp))
                 
                 Text(
-                    text = "A smart answer sheet scanner and grading system for teachers and students.",
+                    text = "A Mobile Class Record System with OMR Solution",
                     fontSize = 14.sp,
                     color = Color.Gray,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    fontWeight = FontWeight.Medium
                 )
                 
                 Spacer(modifier = Modifier.height(24.dp))

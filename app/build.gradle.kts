@@ -48,6 +48,9 @@ dependencies {
     implementation("com.google.firebase:firebase-auth-ktx:23.1.0")
     implementation("com.google.firebase:firebase-firestore-ktx:25.1.1")
     
+    // Coil for image loading (supports Base64 data URIs)
+    implementation("io.coil-kt:coil-compose:2.5.0")
+    
     implementation("androidx.compose.material:material-icons-extended:1.7.5")
 
     // CameraX dependencies
@@ -69,6 +72,9 @@ dependencies {
     //OpenCV dependency
     implementation("com.quickbirdstudios:opencv:4.5.3.0")
 
+    // Splash Screen API (for instant dismissal on Android 12+)
+    implementation("androidx.core:core-splashscreen:1.0.1")
+    
     // Rest of your dependencies
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

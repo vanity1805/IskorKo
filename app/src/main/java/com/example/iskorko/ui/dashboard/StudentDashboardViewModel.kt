@@ -1,5 +1,6 @@
 package com.example.iskorko.ui.dashboard
 
+import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
@@ -77,6 +78,12 @@ class StudentDashboardViewModel : ViewModel() {
     var studentEmail = mutableStateOf("")
         private set
     
+    var profilePictureUrl = mutableStateOf<String?>(null)
+        private set
+    
+    var isUploadingPhoto = mutableStateOf(false)
+        private set
+    
     var classes = mutableStateOf<List<StudentClassItem>>(emptyList())
         private set
     
@@ -108,11 +115,19 @@ class StudentDashboardViewModel : ViewModel() {
     private var classesListener: ListenerRegistration? = null
     private var gradesListener: ListenerRegistration? = null
     private var gradeResultsListeners = mutableListOf<ListenerRegistration>()
+    private var notificationsListener: ListenerRegistration? = null
+    
+    var notifications = mutableStateOf<List<NotificationItem>>(emptyList())
+        private set
+    
+    var unreadNotificationCount = mutableStateOf(0)
+        private set
     
     init {
         loadStudentData()
         loadClasses()
         loadStudentGrades()
+        loadNotifications()
     }
     
     private fun loadStudentData() {
@@ -126,6 +141,7 @@ class StudentDashboardViewModel : ViewModel() {
             .get()
             .addOnSuccessListener { document ->
                 studentName.value = document.getString("fullName") ?: "Student"
+                profilePictureUrl.value = document.getString("profilePictureUrl")
             }
             .addOnFailureListener {
                 studentName.value = "Student"
@@ -396,6 +412,102 @@ class StudentDashboardViewModel : ViewModel() {
             }
     }
     
+    // Profile picture functions (using Base64 stored in Firestore - no Firebase Storage needed)
+    fun uploadProfilePicture(
+        imageUri: Uri,
+        context: android.content.Context,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val userId = auth.currentUser?.uid ?: run {
+            onError("User not authenticated")
+            return
+        }
+        
+        isUploadingPhoto.value = true
+        
+        try {
+            // Read and compress the image
+            val inputStream = context.contentResolver.openInputStream(imageUri)
+            val originalBitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+            inputStream?.close()
+            
+            if (originalBitmap == null) {
+                isUploadingPhoto.value = false
+                onError("Failed to load image")
+                return
+            }
+            
+            // Resize to max 200x200 for profile picture (keeps file size small)
+            val maxSize = 200
+            val ratio = minOf(maxSize.toFloat() / originalBitmap.width, maxSize.toFloat() / originalBitmap.height)
+            val newWidth = (originalBitmap.width * ratio).toInt()
+            val newHeight = (originalBitmap.height * ratio).toInt()
+            val resizedBitmap = android.graphics.Bitmap.createScaledBitmap(originalBitmap, newWidth, newHeight, true)
+            
+            // Convert to Base64 (NO_WRAP to avoid line breaks that break data URIs)
+            val outputStream = java.io.ByteArrayOutputStream()
+            resizedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, outputStream)
+            val base64String = android.util.Base64.encodeToString(
+                outputStream.toByteArray(), 
+                android.util.Base64.NO_WRAP
+            )
+            
+            // Store as data URI
+            val dataUri = "data:image/jpeg;base64,$base64String"
+            
+            Log.d("ProfilePicture", "Base64 string length: ${base64String.length}")
+            
+            // Save to Firestore
+            db.collection("users").document(userId)
+                .update("profilePictureUrl", dataUri)
+                .addOnSuccessListener {
+                    profilePictureUrl.value = dataUri
+                    isUploadingPhoto.value = false
+                    onSuccess()
+                }
+                .addOnFailureListener { e ->
+                    isUploadingPhoto.value = false
+                    onError("Failed to save profile picture: ${e.message}")
+                }
+                
+            // Clean up
+            if (originalBitmap != resizedBitmap) {
+                originalBitmap.recycle()
+            }
+            resizedBitmap.recycle()
+            
+        } catch (e: Exception) {
+            isUploadingPhoto.value = false
+            onError("Failed to process image: ${e.message}")
+        }
+    }
+    
+    fun removeProfilePicture(
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val userId = auth.currentUser?.uid ?: run {
+            onError("User not authenticated")
+            return
+        }
+        
+        isUploadingPhoto.value = true
+        
+        // Remove from Firestore
+        db.collection("users").document(userId)
+            .update("profilePictureUrl", null)
+            .addOnSuccessListener {
+                profilePictureUrl.value = null
+                isUploadingPhoto.value = false
+                onSuccess()
+            }
+            .addOnFailureListener { e ->
+                isUploadingPhoto.value = false
+                onError("Failed to update profile: ${e.message}")
+            }
+    }
+    
     // ==================== GRADES FUNCTIONALITY ====================
     
     fun loadStudentGrades() {
@@ -542,8 +654,67 @@ class StudentDashboardViewModel : ViewModel() {
         
         Log.d("StudentGrades", "Built ${grades.size} grade items")
         
-        // Fetch class rankings for each exam (optional enhancement)
-        fetchClassRankings(grades, studentId)
+        // Fetch class names for grades that don't have them
+        fetchClassNamesAndContinue(grades, studentId)
+    }
+    
+    private fun fetchClassNamesAndContinue(grades: List<StudentGradeItem>, studentId: String) {
+        // Get unique class IDs that need name resolution
+        val classIdsNeedingNames = grades
+            .filter { it.className.isEmpty() && it.classId.isNotEmpty() }
+            .map { it.classId }
+            .distinct()
+        
+        if (classIdsNeedingNames.isEmpty()) {
+            // All grades already have class names, proceed to rankings
+            fetchClassRankings(grades, studentId)
+            return
+        }
+        
+        Log.d("StudentGrades", "Fetching names for ${classIdsNeedingNames.size} classes")
+        
+        val classNameMap = mutableMapOf<String, String>()
+        var fetchedCount = 0
+        
+        classIdsNeedingNames.forEach { classId ->
+            db.collection("classes")
+                .document(classId)
+                .get()
+                .addOnSuccessListener { doc ->
+                    if (doc.exists()) {
+                        val className = doc.getString("className") ?: doc.getString("name") ?: ""
+                        if (className.isNotEmpty()) {
+                            classNameMap[classId] = className
+                        }
+                    }
+                    fetchedCount++
+                    if (fetchedCount == classIdsNeedingNames.size) {
+                        // Update grades with class names and continue
+                        val updatedGrades = grades.map { grade ->
+                            if (grade.className.isEmpty() && classNameMap.containsKey(grade.classId)) {
+                                grade.copy(className = classNameMap[grade.classId] ?: "")
+                            } else {
+                                grade
+                            }
+                        }
+                        fetchClassRankings(updatedGrades, studentId)
+                    }
+                }
+                .addOnFailureListener { e ->
+                    Log.e("StudentGrades", "Error fetching class ${classId}: ${e.message}")
+                    fetchedCount++
+                    if (fetchedCount == classIdsNeedingNames.size) {
+                        val updatedGrades = grades.map { grade ->
+                            if (grade.className.isEmpty() && classNameMap.containsKey(grade.classId)) {
+                                grade.copy(className = classNameMap[grade.classId] ?: "")
+                            } else {
+                                grade
+                            }
+                        }
+                        fetchClassRankings(updatedGrades, studentId)
+                    }
+                }
+        }
     }
     
     private fun fetchClassRankings(grades: List<StudentGradeItem>, studentId: String) {
@@ -699,11 +870,118 @@ class StudentDashboardViewModel : ViewModel() {
         loadStudentGrades()
     }
     
+    // Notifications functions
+    private fun loadNotifications() {
+        val userId = auth.currentUser?.uid ?: return
+        
+        notificationsListener?.remove()
+        notificationsListener = db.collection("notifications")
+            .whereEqualTo("userId", userId)
+            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit(50)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("Notifications", "Error loading notifications: ${error.message}")
+                    generateNotificationsFromActivity()
+                    return@addSnapshotListener
+                }
+                
+                if (snapshot == null || snapshot.isEmpty) {
+                    generateNotificationsFromActivity()
+                    return@addSnapshotListener
+                }
+                
+                val notificationsList = snapshot.documents.mapNotNull { doc ->
+                    try {
+                        NotificationItem(
+                            id = doc.id,
+                            type = NotificationType.valueOf(doc.getString("type") ?: "SYSTEM"),
+                            title = doc.getString("title") ?: "",
+                            message = doc.getString("message") ?: "",
+                            timestamp = doc.getLong("timestamp") ?: 0L,
+                            isRead = doc.getBoolean("isRead") ?: false,
+                            relatedId = doc.getString("relatedId")
+                        )
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+                
+                notifications.value = notificationsList
+                unreadNotificationCount.value = notificationsList.count { !it.isRead }
+            }
+    }
+    
+    private fun generateNotificationsFromActivity() {
+        val notificationsList = mutableListOf<NotificationItem>()
+        
+        // Add notifications from recent grades
+        allGrades.value.take(10).forEach { grade ->
+            notificationsList.add(
+                NotificationItem(
+                    id = "grade_${grade.id}",
+                    type = NotificationType.NEW_GRADE,
+                    title = "Grade Received",
+                    message = "You scored ${grade.percentage.toInt()}% on ${grade.examName} in ${grade.className}",
+                    timestamp = grade.gradedDate,
+                    isRead = true,
+                    relatedId = grade.examId
+                )
+            )
+        }
+        
+        // Add notifications from classes joined
+        classes.value.take(5).forEach { classItem ->
+            notificationsList.add(
+                NotificationItem(
+                    id = "class_${classItem.id}",
+                    type = NotificationType.CLASS_UPDATE,
+                    title = "Enrolled in Class",
+                    message = "You joined ${classItem.className} - ${classItem.section}",
+                    timestamp = System.currentTimeMillis() - (86400000 * classes.value.indexOf(classItem)),
+                    isRead = true,
+                    relatedId = classItem.id
+                )
+            )
+        }
+        
+        notifications.value = notificationsList.sortedByDescending { it.timestamp }.take(20)
+        unreadNotificationCount.value = 0
+    }
+    
+    fun markNotificationAsRead(notificationId: String) {
+        val userId = auth.currentUser?.uid ?: return
+        
+        db.collection("notifications")
+            .document(notificationId)
+            .update("isRead", true)
+            .addOnSuccessListener {
+                notifications.value = notifications.value.map { 
+                    if (it.id == notificationId) it.copy(isRead = true) else it 
+                }
+                unreadNotificationCount.value = notifications.value.count { !it.isRead }
+            }
+    }
+    
+    fun markAllNotificationsAsRead() {
+        val userId = auth.currentUser?.uid ?: return
+        
+        notifications.value.filter { !it.isRead }.forEach { notification ->
+            db.collection("notifications")
+                .document(notification.id)
+                .update("isRead", true)
+        }
+        
+        notifications.value = notifications.value.map { it.copy(isRead = true) }
+        unreadNotificationCount.value = 0
+    }
+    
     override fun onCleared() {
         super.onCleared()
         classesListener?.remove()
         gradesListener?.remove()
         gradeResultsListeners.forEach { it.remove() }
         gradeResultsListeners.clear()
+        notificationsListener?.remove()
     }
 }

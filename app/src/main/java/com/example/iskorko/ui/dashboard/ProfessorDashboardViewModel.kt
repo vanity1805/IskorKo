@@ -1,5 +1,6 @@
 package com.example.iskorko.ui.dashboard
 
+import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
@@ -83,6 +84,40 @@ enum class GradeSortOption {
     EXAM_NAME
 }
 
+enum class NotificationType {
+    NEW_STUDENT,
+    NEW_GRADE,
+    CLASS_UPDATE,
+    EXAM_CREATED,
+    SYSTEM
+}
+
+data class NotificationItem(
+    val id: String = "",
+    val type: NotificationType = NotificationType.SYSTEM,
+    val title: String = "",
+    val message: String = "",
+    val timestamp: Long = 0L,
+    val isRead: Boolean = false,
+    val relatedId: String? = null // classId, examId, etc.
+) {
+    fun getTimeAgo(): String {
+        val now = System.currentTimeMillis()
+        val diff = now - timestamp
+        val seconds = diff / 1000
+        val minutes = seconds / 60
+        val hours = minutes / 60
+        val days = hours / 24
+        
+        return when {
+            days > 0 -> "${days}d ago"
+            hours > 0 -> "${hours}h ago"
+            minutes > 0 -> "${minutes}m ago"
+            else -> "Just now"
+        }
+    }
+}
+
 class ProfessorDashboardViewModel : ViewModel() {
     
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
@@ -95,6 +130,12 @@ class ProfessorDashboardViewModel : ViewModel() {
         private set
     
     var professorJoinDate = mutableStateOf(0L)
+        private set
+    
+    var profilePictureUrl = mutableStateOf<String?>(null)
+        private set
+    
+    var isUploadingPhoto = mutableStateOf(false)
         private set
     
     var classes = mutableStateOf<List<ClassItem>>(emptyList())
@@ -136,11 +177,19 @@ class ProfessorDashboardViewModel : ViewModel() {
     private var classesListener: ListenerRegistration? = null
     private var gradesListener: ListenerRegistration? = null
     private var examResultsListeners = mutableListOf<ListenerRegistration>()
+    private var notificationsListener: ListenerRegistration? = null
+    
+    var notifications = mutableStateOf<List<NotificationItem>>(emptyList())
+        private set
+    
+    var unreadNotificationCount = mutableStateOf(0)
+        private set
     
     init {
         loadProfessorData()
         loadClasses()
         loadAllGrades()
+        loadNotifications()
     }
     
     private fun loadProfessorData() {
@@ -155,6 +204,7 @@ class ProfessorDashboardViewModel : ViewModel() {
             .addOnSuccessListener { document ->
                 professorName.value = document.getString("fullName") ?: "Professor"
                 professorJoinDate.value = document.getLong("createdAt") ?: 0L
+                profilePictureUrl.value = document.getString("profilePictureUrl")
             }
             .addOnFailureListener {
                 professorName.value = "Professor"
@@ -359,13 +409,21 @@ class ProfessorDashboardViewModel : ViewModel() {
                                     
                                     val classId = examDoc.getString("classId") ?: ""
                                     
+                                    // Get class name from loaded classes
+                                    val classItem = classes.value.find { it.id == classId }
+                                    val classNameDisplay = if (classItem != null) {
+                                        "${classItem.className} - ${classItem.section}"
+                                    } else {
+                                        examDoc.getString("className") ?: classId
+                                    }
+                                    
                                     // Get student name - we need to fetch it
                                     batchGrades.add(
                                         GradeItem(
                                             id = gradeDoc.id,
                                             studentId = studentId,
                                             studentName = "", // Will be filled below
-                                            className = examDoc.getString("className") ?: "",
+                                            className = classNameDisplay,
                                             classId = classId,
                                             examName = examDoc.getString("examName") ?: examDoc.getString("title") ?: "",
                                             examId = examId,
@@ -683,6 +741,216 @@ class ProfessorDashboardViewModel : ViewModel() {
         loadAllGrades()
     }
     
+    // Profile picture functions (using Base64 stored in Firestore - no Firebase Storage needed)
+    fun uploadProfilePicture(
+        imageUri: Uri,
+        context: android.content.Context,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val userId = auth.currentUser?.uid ?: run {
+            onError("User not authenticated")
+            return
+        }
+        
+        isUploadingPhoto.value = true
+        
+        try {
+            // Read and compress the image
+            val inputStream = context.contentResolver.openInputStream(imageUri)
+            val originalBitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+            inputStream?.close()
+            
+            if (originalBitmap == null) {
+                isUploadingPhoto.value = false
+                onError("Failed to load image")
+                return
+            }
+            
+            // Resize to max 200x200 for profile picture (keeps file size small)
+            val maxSize = 200
+            val ratio = minOf(maxSize.toFloat() / originalBitmap.width, maxSize.toFloat() / originalBitmap.height)
+            val newWidth = (originalBitmap.width * ratio).toInt()
+            val newHeight = (originalBitmap.height * ratio).toInt()
+            val resizedBitmap = android.graphics.Bitmap.createScaledBitmap(originalBitmap, newWidth, newHeight, true)
+            
+            // Convert to Base64 (NO_WRAP to avoid line breaks that break data URIs)
+            val outputStream = java.io.ByteArrayOutputStream()
+            resizedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, outputStream)
+            val base64String = android.util.Base64.encodeToString(
+                outputStream.toByteArray(), 
+                android.util.Base64.NO_WRAP
+            )
+            
+            // Store as data URI
+            val dataUri = "data:image/jpeg;base64,$base64String"
+            
+            Log.d("ProfilePicture", "Base64 string length: ${base64String.length}")
+            
+            // Save to Firestore
+            db.collection("users").document(userId)
+                .update("profilePictureUrl", dataUri)
+                .addOnSuccessListener {
+                    profilePictureUrl.value = dataUri
+                    isUploadingPhoto.value = false
+                    onSuccess()
+                }
+                .addOnFailureListener { e ->
+                    isUploadingPhoto.value = false
+                    onError("Failed to save profile picture: ${e.message}")
+                }
+                
+            // Clean up
+            if (originalBitmap != resizedBitmap) {
+                originalBitmap.recycle()
+            }
+            resizedBitmap.recycle()
+            
+        } catch (e: Exception) {
+            isUploadingPhoto.value = false
+            onError("Failed to process image: ${e.message}")
+        }
+    }
+    
+    fun removeProfilePicture(
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val userId = auth.currentUser?.uid ?: run {
+            onError("User not authenticated")
+            return
+        }
+        
+        isUploadingPhoto.value = true
+        
+        // Remove from Firestore
+        db.collection("users").document(userId)
+            .update("profilePictureUrl", null)
+            .addOnSuccessListener {
+                profilePictureUrl.value = null
+                isUploadingPhoto.value = false
+                onSuccess()
+            }
+            .addOnFailureListener { e ->
+                isUploadingPhoto.value = false
+                onError("Failed to update profile: ${e.message}")
+            }
+    }
+    
+    // Notifications functions
+    private fun loadNotifications() {
+        val userId = auth.currentUser?.uid ?: return
+        
+        notificationsListener?.remove()
+        notificationsListener = db.collection("notifications")
+            .whereEqualTo("userId", userId)
+            .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .limit(50)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("Notifications", "Error loading notifications: ${error.message}")
+                    // Generate notifications from activity if no notifications collection exists
+                    generateNotificationsFromActivity()
+                    return@addSnapshotListener
+                }
+                
+                if (snapshot == null || snapshot.isEmpty) {
+                    // Generate notifications from activity
+                    generateNotificationsFromActivity()
+                    return@addSnapshotListener
+                }
+                
+                val notificationsList = snapshot.documents.mapNotNull { doc ->
+                    try {
+                        NotificationItem(
+                            id = doc.id,
+                            type = NotificationType.valueOf(doc.getString("type") ?: "SYSTEM"),
+                            title = doc.getString("title") ?: "",
+                            message = doc.getString("message") ?: "",
+                            timestamp = doc.getLong("timestamp") ?: 0L,
+                            isRead = doc.getBoolean("isRead") ?: false,
+                            relatedId = doc.getString("relatedId")
+                        )
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+                
+                notifications.value = notificationsList
+                unreadNotificationCount.value = notificationsList.count { !it.isRead }
+            }
+    }
+    
+    private fun generateNotificationsFromActivity() {
+        // Generate notifications from recent grades and classes
+        val notificationsList = mutableListOf<NotificationItem>()
+        
+        // Add notifications from recent grades
+        allGrades.value.take(10).forEach { grade ->
+            notificationsList.add(
+                NotificationItem(
+                    id = "grade_${grade.id}",
+                    type = NotificationType.NEW_GRADE,
+                    title = "New Grade Recorded",
+                    message = "${grade.studentName} scored ${grade.percentage.toInt()}% on ${grade.examName}",
+                    timestamp = grade.gradedDate,
+                    isRead = true,
+                    relatedId = grade.examId
+                )
+            )
+        }
+        
+        // Add notifications from classes
+        classes.value.take(5).forEach { classItem ->
+            if (classItem.studentCount > 0) {
+                notificationsList.add(
+                    NotificationItem(
+                        id = "class_${classItem.id}",
+                        type = NotificationType.CLASS_UPDATE,
+                        title = classItem.className,
+                        message = "${classItem.studentCount} students enrolled in ${classItem.section}",
+                        timestamp = System.currentTimeMillis() - (3600000 * classItem.studentCount), // Spread timestamps
+                        isRead = true,
+                        relatedId = classItem.id
+                    )
+                )
+            }
+        }
+        
+        // Sort by timestamp and take the most recent
+        notifications.value = notificationsList.sortedByDescending { it.timestamp }.take(20)
+        unreadNotificationCount.value = 0
+    }
+    
+    fun markNotificationAsRead(notificationId: String) {
+        val userId = auth.currentUser?.uid ?: return
+        
+        db.collection("notifications")
+            .document(notificationId)
+            .update("isRead", true)
+            .addOnSuccessListener {
+                // Update local state
+                notifications.value = notifications.value.map { 
+                    if (it.id == notificationId) it.copy(isRead = true) else it 
+                }
+                unreadNotificationCount.value = notifications.value.count { !it.isRead }
+            }
+    }
+    
+    fun markAllNotificationsAsRead() {
+        val userId = auth.currentUser?.uid ?: return
+        
+        notifications.value.filter { !it.isRead }.forEach { notification ->
+            db.collection("notifications")
+                .document(notification.id)
+                .update("isRead", true)
+        }
+        
+        // Update local state
+        notifications.value = notifications.value.map { it.copy(isRead = true) }
+        unreadNotificationCount.value = 0
+    }
+    
     override fun onCleared() {
         super.onCleared()
         // Remove all Firestore listeners when ViewModel is destroyed
@@ -690,6 +958,7 @@ class ProfessorDashboardViewModel : ViewModel() {
         gradesListener?.remove()
         examResultsListeners.forEach { it.remove() }
         examResultsListeners.clear()
+        notificationsListener?.remove()
         Log.d("GradesTab", "ViewModel cleared, listeners removed")
     }
 }

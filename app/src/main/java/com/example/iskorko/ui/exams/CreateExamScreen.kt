@@ -92,20 +92,47 @@ fun CreateExamScreen(
                     
                     Spacer(modifier = Modifier.height(12.dp))
                     
-                    OutlinedTextField(
-                        value = viewModel.totalQuestions.value,
-                        onValueChange = viewModel::onTotalQuestionsChange,
-                        label = { Text("Number of Questions") },
-                        placeholder = { Text("e.g., 50") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !viewModel.isLoading.value
-                    )
+                    // Number of Questions Dropdown
+                    var expanded by remember { mutableStateOf(false) }
+                    val questionOptions = listOf(20, 50, 100)
+                    
+                    ExposedDropdownMenuBox(
+                        expanded = expanded,
+                        onExpandedChange = { if (!viewModel.isLoading.value) expanded = !expanded }
+                    ) {
+                        OutlinedTextField(
+                            value = if (viewModel.totalQuestions.value.isNotEmpty()) 
+                                "${viewModel.totalQuestions.value} Questions" else "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Number of Questions") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(),
+                            enabled = !viewModel.isLoading.value
+                        )
+                        
+                        ExposedDropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false }
+                        ) {
+                            questionOptions.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text("$option Questions") },
+                                    onClick = {
+                                        viewModel.onTotalQuestionsChange(option.toString())
+                                        expanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
                     
                     Spacer(modifier = Modifier.height(8.dp))
                     
                     Text(
-                        text = "Maximum 100 questions",
+                        text = "Select 20, 50, or 100 questions",
                         fontSize = 12.sp,
                         color = Color.Gray
                     )
