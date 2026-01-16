@@ -1,5 +1,6 @@
 package com.example.iskorko.ui.exams
 
+import android.util.Log
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import com.google.firebase.firestore.FirebaseFirestore
@@ -61,14 +62,40 @@ class ExamDetailViewModel : ViewModel() {
     }
     
     fun deleteExam(examId: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
-        db.collection("exams")
-            .document(examId)
-            .delete()
-            .addOnSuccessListener {
-                onSuccess()
+        // First, delete all grades associated with this exam
+        db.collection("grades")
+            .whereEqualTo("examId", examId)
+            .get()
+            .addOnSuccessListener { gradesSnapshot ->
+                val batch = db.batch()
+                
+                // Add all grade deletions to batch
+                gradesSnapshot.documents.forEach { gradeDoc ->
+                    batch.delete(gradeDoc.reference)
+                }
+                
+                // Add exam deletion to batch
+                batch.delete(db.collection("exams").document(examId))
+                
+                // Commit the batch
+                batch.commit()
+                    .addOnSuccessListener {
+                        Log.d("ExamDelete", "Deleted exam and ${gradesSnapshot.size()} associated grades")
+                        onSuccess()
+                    }
+                    .addOnFailureListener { e ->
+                        onError("Failed to delete exam: ${e.message}")
+                    }
             }
             .addOnFailureListener { e ->
-                onError("Failed to delete exam: ${e.message}")
+                // If we can't get grades, still try to delete the exam
+                db.collection("exams")
+                    .document(examId)
+                    .delete()
+                    .addOnSuccessListener { onSuccess() }
+                    .addOnFailureListener { ex ->
+                        onError("Failed to delete exam: ${ex.message}")
+                    }
             }
     }
 }

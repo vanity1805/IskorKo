@@ -1,5 +1,6 @@
 package com.example.iskorko.ui.classes
 
+import android.util.Log
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import com.google.firebase.firestore.FirebaseFirestore
@@ -124,12 +125,96 @@ class ClassDetailViewModel : ViewModel() {
     }
     
     fun deleteClass(classId: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        // First, find all exams associated with this class
+        db.collection("exams")
+            .whereEqualTo("classId", classId)
+            .get()
+            .addOnSuccessListener { examsSnapshot ->
+                val examIds = examsSnapshot.documents.map { it.id }
+                
+                if (examIds.isEmpty()) {
+                    // No exams, just delete the class
+                    deleteClassDocument(classId, onSuccess, onError)
+                } else {
+                    // Delete grades for all exams, then exams, then class
+                    deleteGradesForExams(examIds) {
+                        deleteExamsAndClass(examIds, classId, onSuccess, onError)
+                    }
+                }
+            }
+            .addOnFailureListener { e ->
+                // If we can't get exams, still try to delete the class
+                deleteClassDocument(classId, onSuccess, onError)
+            }
+    }
+    
+    private fun deleteGradesForExams(examIds: List<String>, onComplete: () -> Unit) {
+        if (examIds.isEmpty()) {
+            onComplete()
+            return
+        }
+        
+        var completedCount = 0
+        val totalBatches = examIds.size
+        
+        examIds.forEach { examId ->
+            db.collection("grades")
+                .whereEqualTo("examId", examId)
+                .get()
+                .addOnSuccessListener { gradesSnapshot ->
+                    if (gradesSnapshot.isEmpty) {
+                        completedCount++
+                        if (completedCount == totalBatches) onComplete()
+                    } else {
+                        val batch = db.batch()
+                        gradesSnapshot.documents.forEach { gradeDoc ->
+                            batch.delete(gradeDoc.reference)
+                        }
+                        batch.commit()
+                            .addOnSuccessListener {
+                                Log.d("ClassDelete", "Deleted ${gradesSnapshot.size()} grades for exam $examId")
+                                completedCount++
+                                if (completedCount == totalBatches) onComplete()
+                            }
+                            .addOnFailureListener {
+                                completedCount++
+                                if (completedCount == totalBatches) onComplete()
+                            }
+                    }
+                }
+                .addOnFailureListener {
+                    completedCount++
+                    if (completedCount == totalBatches) onComplete()
+                }
+        }
+    }
+    
+    private fun deleteExamsAndClass(examIds: List<String>, classId: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        val batch = db.batch()
+        
+        // Add all exam deletions to batch
+        examIds.forEach { examId ->
+            batch.delete(db.collection("exams").document(examId))
+        }
+        
+        // Add class deletion to batch
+        batch.delete(db.collection("classes").document(classId))
+        
+        batch.commit()
+            .addOnSuccessListener {
+                Log.d("ClassDelete", "Deleted class and ${examIds.size} exams")
+                onSuccess()
+            }
+            .addOnFailureListener { e ->
+                onError("Failed to delete class: ${e.message}")
+            }
+    }
+    
+    private fun deleteClassDocument(classId: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
         db.collection("classes")
             .document(classId)
             .delete()
-            .addOnSuccessListener {
-                onSuccess()
-            }
+            .addOnSuccessListener { onSuccess() }
             .addOnFailureListener { e ->
                 onError("Failed to delete class: ${e.message}")
             }
