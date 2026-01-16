@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IskorKo Answer Sheet - 20 Questions</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        @page {
+            size: A4;
+            margin: 10mm;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 11px;
+            background: white;
+            width: 190mm;  /* A4 width minus margins */
+            height: 277mm; /* A4 height minus margins */
+            padding: 0;
+            position: relative;
+        }
+        
+        /* Corner Timing Marks */
+        .corner-mark {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            background: black;
+        }
+        
+        .corner-tl { top: 0; left: 0; }
+        .corner-tr { top: 0; right: 0; }
+        .corner-bl { bottom: 0; left: 0; }
+        .corner-br { bottom: 0; right: 0; }
+        
+        /* Header */
+        .header {
+            text-align: center;
+            margin: 30px 40px 15px 40px;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 3px;
+        }
+        
+        .header p {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        /* Info Fields */
+        .info-section {
+            margin: 15px 40px;
+            display: flex;
+            gap: 20px;
+        }
+        
+        .info-row {
+            display: flex;
+            gap: 20px;
+            width: 100%;
+        }
+        
+        .info-field {
+            flex: 1;
+            border: 1px solid black;
+            padding: 6px 10px;
+            font-size: 11px;
+        }
+        
+        .info-field span {
+            font-weight: bold;
+        }
+        
+        /* Main Answer Area */
+        .answer-area {
+            display: flex;
+            justify-content: center;
+            gap: 60px;
+            margin: 25px 40px;
+        }
+        
+        .column {
+            position: relative;
+        }
+        
+        .column-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            padding-left: 20px;
+        }
+        
+        .column-header span {
+            width: 28px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 10px;
+        }
+        
+        .question-row {
+            display: flex;
+            align-items: center;
+            height: 28px;
+            position: relative;
+        }
+        
+        /* Row Timing Mark - Critical for scanning! */
+        .row-timing-mark {
+            width: 10px;
+            height: 10px;
+            background: black;
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+        
+        .question-num {
+            width: 22px;
+            text-align: right;
+            margin-right: 6px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        
+        .bubbles {
+            display: flex;
+            gap: 6px;
+        }
+        
+        .bubble {
+            width: 20px;
+            height: 20px;
+            border: 1.5px solid black;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        /* Instructions */
+        .instructions {
+            position: absolute;
+            bottom: 35px;
+            left: 40px;
+            right: 40px;
+            border-top: 1px solid #800202;
+            padding-top: 10px;
+        }
+        
+        .instructions h3 {
+            color: #800202;
+            font-size: 11px;
+            text-align: center;
+            margin-bottom: 5px;
+        }
+        
+        .instructions p {
+            font-size: 9px;
+            text-align: center;
+            color: #666;
+        }
+        
+        .instructions .brand {
+            color: #800202;
+            font-weight: bold;
+        }
+        
+        @media print {
+            body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Corner Timing Marks -->
+    <div class="corner-mark corner-tl"></div>
+    <div class="corner-mark corner-tr"></div>
+    <div class="corner-mark corner-bl"></div>
+    <div class="corner-mark corner-br"></div>
+    
+    <!-- Header -->
+    <div class="header">
+        <h1>IskorKo Answer Sheet</h1>
+        <p>Automated Grading System</p>
+    </div>
+    
+    <!-- Info Section -->
+    <div class="info-section">
+        <div class="info-row">
+            <div class="info-field"><span>NAME:</span></div>
+            <div class="info-field" style="flex: 0.4;"><span>DATE:</span></div>
+        </div>
+    </div>
+    <div class="info-section" style="margin-top: 8px;">
+        <div class="info-row">
+            <div class="info-field"><span>STUDENT ID:</span></div>
+            <div class="info-field"><span>PERIOD/CLASS:</span></div>
+        </div>
+    </div>
+    
+    <!-- Answer Bubbles -->
+    <div class="answer-area">
+        <!-- Column 1: Questions 1-10 -->
+        <div class="column">
+            <div class="column-header">
+                <div class="row-timing-mark" style="visibility: hidden;"></div>
+                <div class="question-num"></div>
+                <span>A</span>
+                <span>B</span>
+                <span>C</span>
+                <span>D</span>
+                <span>E</span>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">1.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">2.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">3.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">4.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">5.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">6.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">7.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">8.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">9.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">10.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Column 2: Questions 11-20 -->
+        <div class="column">
+            <div class="column-header">
+                <div class="row-timing-mark" style="visibility: hidden;"></div>
+                <div class="question-num"></div>
+                <span>A</span>
+                <span>B</span>
+                <span>C</span>
+                <span>D</span>
+                <span>E</span>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">11.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">12.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">13.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">14.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">15.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">16.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">17.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">18.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">19.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+            <div class="question-row">
+                <div class="row-timing-mark"></div>
+                <div class="question-num">20.</div>
+                <div class="bubbles">
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                    <div class="bubble"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Instructions -->
+    <div class="instructions">
+        <h3>INSTRUCTIONS</h3>
+        <p>• Use #2 pencil or dark pen • Fill bubbles completely • Erase cleanly to change answers • Keep all corner marks visible</p>
+        <p style="margin-top: 5px;"><span class="brand">IskorKo</span> © 2025 • Total: 20 Questions • Scan with IskorKo Mobile App</p>
+    </div>
+</body>
+</html>

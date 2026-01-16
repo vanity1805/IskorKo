@@ -86,8 +86,8 @@ fun ProfessorDashboardScreen(
                         }
                     ) {
                         IconButton(onClick = { showNotifications = true }) {
-                            Icon(Icons.Filled.Notifications, contentDescription = "Notifications")
-                        }
+                        Icon(Icons.Filled.Notifications, contentDescription = "Notifications")
+                    }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -592,7 +592,7 @@ fun GradesTab(viewModel: ProfessorDashboardViewModel) {
                 animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
             )
         ) {
-            GradeStatisticsSection(viewModel.gradeStatistics.value)
+        GradeStatisticsSection(viewModel.gradeStatistics.value)
         }
         
         // Animated Content Container (slides up from bottom)
@@ -614,44 +614,44 @@ fun GradesTab(viewModel: ProfessorDashboardViewModel) {
                 Column(
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    // View Mode Tabs
-                    ViewModeTabs(
-                        selectedMode = viewModel.selectedViewMode.value,
-                        onModeSelected = { viewModel.setViewMode(it) }
-                    )
-                    
-                    // Search and Filter Bar
-                    SearchAndFilterBar(
-                        searchQuery = viewModel.searchQuery.value,
-                        onSearchChange = { viewModel.setSearchQuery(it) },
-                        onFilterClick = { showFilterMenu = true },
-                        onSortClick = { showSortMenu = true },
-                        hasFilters = viewModel.selectedClassFilter.value != null || 
-                                    viewModel.selectedExamFilter.value != null
-                    )
-                    
-                    // Content based on view mode
-                    when (viewModel.selectedViewMode.value) {
-                        GradeViewMode.ALL_GRADES -> AllGradesView(
-                            grades = viewModel.getFilteredAndSortedGrades(),
-                            isLoading = viewModel.isLoadingGrades.value,
-                            onGradeClick = { selectedGrade = it }
-                        )
-                        GradeViewMode.BY_CLASS -> ByClassView(
-                            classSummaries = viewModel.classSummaries.value,
-                            isLoading = viewModel.isLoadingGrades.value,
-                            onGradeClick = { selectedGrade = it }
-                        )
-                        GradeViewMode.BY_EXAM -> ByExamView(
-                            examSummaries = viewModel.examSummaries.value,
-                            isLoading = viewModel.isLoadingGrades.value,
-                            onGradeClick = { selectedGrade = it }
-                        )
-                        GradeViewMode.BY_STUDENT -> ByStudentView(
-                            grades = viewModel.getFilteredAndSortedGrades(),
-                            isLoading = viewModel.isLoadingGrades.value,
-                            onGradeClick = { selectedGrade = it }
-                        )
+        // View Mode Tabs
+        ViewModeTabs(
+            selectedMode = viewModel.selectedViewMode.value,
+            onModeSelected = { viewModel.setViewMode(it) }
+        )
+        
+        // Search and Filter Bar
+        SearchAndFilterBar(
+            searchQuery = viewModel.searchQuery.value,
+            onSearchChange = { viewModel.setSearchQuery(it) },
+            onFilterClick = { showFilterMenu = true },
+            onSortClick = { showSortMenu = true },
+            hasFilters = viewModel.selectedClassFilter.value != null || 
+                        viewModel.selectedExamFilter.value != null
+        )
+        
+        // Content based on view mode
+        when (viewModel.selectedViewMode.value) {
+            GradeViewMode.ALL_GRADES -> AllGradesView(
+                grades = viewModel.getFilteredAndSortedGrades(),
+                isLoading = viewModel.isLoadingGrades.value,
+                onGradeClick = { selectedGrade = it }
+            )
+            GradeViewMode.BY_CLASS -> ByClassView(
+                classSummaries = viewModel.classSummaries.value,
+                isLoading = viewModel.isLoadingGrades.value,
+                onGradeClick = { selectedGrade = it }
+            )
+            GradeViewMode.BY_EXAM -> ByExamView(
+                examSummaries = viewModel.examSummaries.value,
+                isLoading = viewModel.isLoadingGrades.value,
+                onGradeClick = { selectedGrade = it }
+            )
+            GradeViewMode.BY_STUDENT -> ByStudentView(
+                grades = viewModel.getFilteredAndSortedGrades(),
+                isLoading = viewModel.isLoadingGrades.value,
+                onGradeClick = { selectedGrade = it }
+            )
                     }
                 }
             }
@@ -1176,18 +1176,18 @@ fun ExamGradesCard(summary: ExamGradesSummary, onGradeClick: (GradeItem) -> Unit
                         
                         // Only show High/Low if there's variation in scores
                         if (summary.highestScore != summary.lowestScore) {
-                            Text(text = " · ", fontSize = 11.sp, color = Color.Gray)
-                            Text(
-                                text = "High: ${summary.highestScore}",
-                                fontSize = 11.sp,
-                                color = Color(0xFF4CAF50)
-                            )
-                            Text(text = " · ", fontSize = 11.sp, color = Color.Gray)
-                            Text(
-                                text = "Low: ${summary.lowestScore}",
-                                fontSize = 11.sp,
-                                color = Color(0xFFE53935)
-                            )
+                        Text(text = " · ", fontSize = 11.sp, color = Color.Gray)
+                        Text(
+                            text = "High: ${summary.highestScore}",
+                            fontSize = 11.sp,
+                            color = Color(0xFF4CAF50)
+                        )
+                        Text(text = " · ", fontSize = 11.sp, color = Color.Gray)
+                        Text(
+                            text = "Low: ${summary.lowestScore}",
+                            fontSize = 11.sp,
+                            color = Color(0xFFE53935)
+                        )
                         } else if (summary.studentsTaken > 0) {
                             Text(text = " · ", fontSize = 11.sp, color = Color.Gray)
                             Text(
@@ -1988,8 +1988,8 @@ fun ProfileTab(
                     contentAlignment = Alignment.Center
                 ) {
                     if (isUploadingPhoto) {
-                        Box(
-                            modifier = Modifier
+                Box(
+                    modifier = Modifier
                                 .size(100.dp)
                                 .background(Color.LightGray.copy(alpha = 0.5f), CircleShape),
                             contentAlignment = Alignment.Center
@@ -2032,14 +2032,14 @@ fun ProfileTab(
                                         shape = CircleShape
                                     )
                                     .clickable { showPhotoOptionsDialog = true },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
                                     text = professorName.firstOrNull()?.uppercase() ?: "P",
                                     fontSize = 36.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
                             }
                         }
                     } else {
@@ -2084,12 +2084,12 @@ fun ProfileTab(
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                Text(
-                    text = professorName,
-                    fontFamily = NeueMachina,
+                    Text(
+                        text = professorName,
+                        fontFamily = NeueMachina,
                     fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                        fontWeight = FontWeight.Bold
+                    )
                 
                 Row(
                     verticalAlignment = Alignment.CenterVertically
@@ -2186,18 +2186,18 @@ fun ProfileTab(
             shape = RoundedCornerShape(12.dp)
         ) {
             Column {
-                SettingsOption(
-                    icon = Icons.Filled.Edit,
-                    title = "Edit Profile",
+        SettingsOption(
+            icon = Icons.Filled.Edit,
+            title = "Edit Profile",
                     subtitle = "Change your name",
                     onClick = { showEditProfileDialog = true }
-                )
+        )
                 
                 Divider(modifier = Modifier.padding(horizontal = 16.dp))
-                
-                SettingsOption(
-                    icon = Icons.Filled.Lock,
-                    title = "Change Password",
+        
+        SettingsOption(
+            icon = Icons.Filled.Lock,
+            title = "Change Password",
                     subtitle = "Update your password",
                     onClick = { showChangePasswordDialog = true }
                 )
@@ -2223,8 +2223,8 @@ fun ProfileTab(
             shape = RoundedCornerShape(12.dp)
         ) {
             Column {
-                SettingsOption(
-                    icon = Icons.Filled.Info,
+        SettingsOption(
+            icon = Icons.Filled.Info,
                     title = "About IskorKo",
                     subtitle = "Version 1.0.0",
                     onClick = { showAboutDialog = true }
@@ -2457,7 +2457,7 @@ fun SettingsOption(
             )
         }
         
-        Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(16.dp))
         
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -2474,9 +2474,9 @@ fun SettingsOption(
             }
         }
         
-        Icon(
-            Icons.Filled.ChevronRight,
-            contentDescription = null,
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = null,
             tint = Color.Gray,
             modifier = Modifier.size(20.dp)
         )

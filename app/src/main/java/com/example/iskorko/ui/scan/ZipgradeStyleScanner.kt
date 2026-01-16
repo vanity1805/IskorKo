@@ -28,10 +28,10 @@ class ZipgradeStyleScanner(private val context: Context) {
         private const val MARKER_ASPECT_MIN = 0.5         // More lenient
         private const val MARKER_ASPECT_MAX = 2.0         // More lenient
         
-        // Bubble detection (adaptive) - more lenient for ovals
-        private const val BUBBLE_MIN_AREA = 80.0          // Smaller minimum
-        private const val BUBBLE_MAX_AREA = 3000.0        // Larger maximum
-        private const val CIRCULARITY_THRESHOLD = 0.40f   // Accept ovals too
+        // Bubble detection (adaptive) - more lenient for various bubble shapes
+        private const val BUBBLE_MIN_AREA = 60.0          // Smaller minimum for smaller bubbles
+        private const val BUBBLE_MAX_AREA = 4000.0        // Larger maximum
+        private const val CIRCULARITY_THRESHOLD = 0.30f   // Very lenient - accept any roundish shape
         
         // Darkness thresholds (handle multiple scenarios)
         private const val FILLED_THRESHOLD = 0.30f      // Clear fill
@@ -57,7 +57,10 @@ class ZipgradeStyleScanner(private val context: Context) {
     }
     
     fun processAnswerSheet(bitmap: Bitmap, totalQuestions: Int, optionsPerQuestion: Int = 5): ScanResult {
-        Log.d(TAG, "=== SCAN START: $totalQuestions questions ===")
+        Log.d(TAG, "")
+        Log.d(TAG, "╔═══════════════════════════════════════════════════════════")
+        Log.d(TAG, "║ SCAN START: $totalQuestions questions, Image: ${bitmap.width}x${bitmap.height}")
+        Log.d(TAG, "╠═══════════════════════════════════════════════════════════")
         
         if (totalQuestions !in listOf(20, 50, 100)) {
             return ScanResult.Error("Only 20, 50, or 100 questions supported")
@@ -65,30 +68,63 @@ class ZipgradeStyleScanner(private val context: Context) {
         
         return try {
             // Step 1: Robust corner detection with fallback
+            Log.d(TAG, "║ STEP 1: Corner Detection...")
             val (correctedBitmap, corners) = findAndCorrectPerspective(bitmap)
+            Log.d(TAG, "║   → Corners found: ${corners?.size ?: "NONE"}")
+            Log.d(TAG, "║   → Corrected image: ${correctedBitmap.width}x${correctedBitmap.height}")
             
             // Step 2: Adaptive preprocessing based on lighting
+            Log.d(TAG, "║ STEP 2: Preprocessing...")
             val processedMat = preprocessAdaptive(correctedBitmap)
+            Log.d(TAG, "║   → Preprocessed mat size: ${processedMat.cols()}x${processedMat.rows()}")
             
             // Step 3: Detect bubbles with quality filtering
+            Log.d(TAG, "║ STEP 3: Bubble Detection...")
             val bubbles = detectBubblesRobust(processedMat, correctedBitmap)
-            Log.d(TAG, "Detected ${bubbles.size} bubbles")
+            Log.d(TAG, "║   → Detected ${bubbles.size} bubbles")
             
             if (bubbles.isEmpty()) {
+                Log.e(TAG, "║ ERROR: No bubbles detected!")
+                Log.d(TAG, "╚═══════════════════════════════════════════════════════════")
                 return ScanResult.Error("No bubbles detected. Check lighting and focus.")
             }
             
-            // Step 4: Column-first grouping with validation
-            val questionGroups = groupByColumnsRobust(bubbles, totalQuestions, optionsPerQuestion)
-            Log.d(TAG, "Grouped into ${questionGroups.size} questions")
+            // Log bubble distribution for debugging
+            Log.d(TAG, "║   → Bubble distribution:")
+            val minX = bubbles.minOfOrNull { it.x }?.toInt() ?: 0
+            val maxX = bubbles.maxOfOrNull { it.x }?.toInt() ?: 0
+            val minY = bubbles.minOfOrNull { it.y }?.toInt() ?: 0
+            val maxY = bubbles.maxOfOrNull { it.y }?.toInt() ?: 0
+            Log.d(TAG, "║       X range: $minX - $maxX (span: ${maxX - minX})")
+            Log.d(TAG, "║       Y range: $minY - $maxY (span: ${maxY - minY})")
+            Log.d(TAG, "║   → First 10 bubble positions:")
+            bubbles.take(10).forEachIndexed { i, b ->
+                Log.d(TAG, "║       [$i] x=${b.x.toInt()}, y=${b.y.toInt()}, darkness=${String.format("%.2f", b.darkness)}")
+            }
+            
+            // Step 4: Column-first grouping with validation (now uses row timing marks!)
+            Log.d(TAG, "║ STEP 4: Grouping into Questions...")
+            val questionGroups = groupByColumnsRobust(bubbles, totalQuestions, optionsPerQuestion, correctedBitmap)
+            Log.d(TAG, "║   → Grouped into ${questionGroups.size} questions")
             
             // Step 5: Extract answers with double-mark detection
+            Log.d(TAG, "║ STEP 5: Extracting Answers...")
             val (answers, issues) = extractAnswersWithValidation(questionGroups, correctedBitmap)
+            Log.d(TAG, "║   → Extracted ${answers.size} answers")
+            Log.d(TAG, "║   → Issues: ${issues.size}")
+            
+            // Log first 20 answers
+            Log.d(TAG, "║   → Answers (first 20):")
+            answers.take(20).forEachIndexed { i, ans ->
+                Log.d(TAG, "║       Q${i+1}: $ans")
+            }
             
             // Step 6: Calculate confidence with validation
             val confidence = calculateConfidenceScore(answers, issues, totalQuestions)
             
-            Log.d(TAG, "=== SCAN COMPLETE: ${answers.size}/${totalQuestions} detected, ${String.format("%.1f%%", confidence * 100)} confidence ===")
+            Log.d(TAG, "╠═══════════════════════════════════════════════════════════")
+            Log.d(TAG, "║ SCAN COMPLETE: ${answers.size}/$totalQuestions, Confidence: ${String.format("%.1f%%", confidence * 100)}")
+            Log.d(TAG, "╚═══════════════════════════════════════════════════════════")
             
             ScanResult.Success(
                 answers = answers,
@@ -297,20 +333,189 @@ class ZipgradeStyleScanner(private val context: Context) {
     }
     
     /**
-     * Robust bubble detection with quality filtering
+     * Template-based bubble detection for known grid layouts
      */
     private fun detectBubblesRobust(processedMat: Mat, originalBitmap: Bitmap): List<BubbleCandidate> {
+        Log.d(TAG, "║     Bubble Detection Details:")
+        
+        val imageWidth = originalBitmap.width
+        val imageHeight = originalBitmap.height
+        
+        Log.d(TAG, "║     - Image size: ${imageWidth}x${imageHeight}")
+        
+        // Use template grid matching for the known IskorKo layout
+        return detectBubblesWithTemplateGrid(originalBitmap, processedMat)
+    }
+    
+    /**
+     * Template grid-based bubble detection - uses known layout to locate bubbles
+     */
+    private fun detectBubblesWithTemplateGrid(bitmap: Bitmap, processedMat: Mat): List<BubbleCandidate> {
+        val width = bitmap.width
+        val height = bitmap.height
+        
+        // IskorKo template layout based on the provided images:
+        // For 20 questions: 2 columns, 10 rows, 5 options per row
+        // The bubble area starts after header (~15% from top) and ends before footer (~85% from top)
+        // Columns take about 80% of width, centered
+        
+        // Tighter margins to exclude timing marks and edge artifacts
+        val headerRatio = 0.20f   // Skip header + top timing marks
+        val footerRatio = 0.92f   // Skip footer + bottom timing marks  
+        val leftMarginRatio = 0.12f  // Skip left timing marks
+        val rightMarginRatio = 0.88f // Skip right timing marks
+        
+        val bubbleAreaTop = (height * headerRatio).toInt()
+        val bubbleAreaBottom = (height * footerRatio).toInt()
+        val bubbleAreaLeft = (width * leftMarginRatio).toInt()
+        val bubbleAreaRight = (width * rightMarginRatio).toInt()
+        
+        val bubbleAreaHeight = bubbleAreaBottom - bubbleAreaTop
+        val bubbleAreaWidth = bubbleAreaRight - bubbleAreaLeft
+        
+        Log.d(TAG, "║     - Bubble area: ($bubbleAreaLeft,$bubbleAreaTop) to ($bubbleAreaRight,$bubbleAreaBottom)")
+        Log.d(TAG, "║     - Bubble area size: ${bubbleAreaWidth}x${bubbleAreaHeight}")
+        
+        // Convert to grayscale for analysis
+        val grayMat = Mat()
+        Utils.bitmapToMat(bitmap, grayMat)
+        Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
+        
+        // For a standard answer sheet, we'll use HoughCircles but filter by expected positions
+        Imgproc.GaussianBlur(grayMat, grayMat, org.opencv.core.Size(9.0, 9.0), 2.0)
+        
+        val expectedBubbleRadius = (bubbleAreaWidth / 30.0).toInt().coerceIn(12, 35)
+        val minRadius = (expectedBubbleRadius * 0.6).toInt()
+        val maxRadius = (expectedBubbleRadius * 1.5).toInt()
+        
+        Log.d(TAG, "║     - Expected bubble radius: $expectedBubbleRadius (range: $minRadius-$maxRadius)")
+        
+        val circles = Mat()
+        Imgproc.HoughCircles(
+            grayMat,
+            circles,
+            Imgproc.HOUGH_GRADIENT,
+            1.0,
+            (minRadius * 2.0),  // Minimum distance between circles
+            80.0,               // Canny threshold
+            25.0,               // Accumulator threshold (balanced)
+            minRadius,
+            maxRadius
+        )
+        
+        Log.d(TAG, "║     - HoughCircles found: ${circles.cols()} raw circles")
+        
+        // Filter circles to only those in the bubble area
+        val bubbles = mutableListOf<BubbleCandidate>()
+        
+        for (i in 0 until circles.cols()) {
+            val circleData = circles.get(0, i)
+            val centerX = circleData[0].toFloat()
+            val centerY = circleData[1].toFloat()
+            val radius = circleData[2].toFloat()
+            
+            // Only keep circles within the bubble area
+            if (centerX >= bubbleAreaLeft && centerX <= bubbleAreaRight &&
+                centerY >= bubbleAreaTop && centerY <= bubbleAreaBottom) {
+                
+                val darkness = calculateBubbleDarkness(bitmap, centerX.toInt(), centerY.toInt(), radius.toInt())
+                
+                bubbles.add(BubbleCandidate(
+                    x = centerX,
+                    y = centerY,
+                    radius = radius,
+                    darkness = darkness,
+                    area = (Math.PI * radius * radius),
+                    circularity = 1.0f
+                ))
+            }
+        }
+        
+        Log.d(TAG, "║     - Bubbles in valid area: ${bubbles.size}")
+        
+        // If not enough bubbles found, try contour fallback
+        if (bubbles.size < 50) {
+            Log.d(TAG, "║     - Trying contour fallback...")
+            val contourBubbles = detectBubblesWithContours(processedMat, bitmap)
+                .filter { 
+                    it.x >= bubbleAreaLeft && it.x <= bubbleAreaRight &&
+                    it.y >= bubbleAreaTop && it.y <= bubbleAreaBottom 
+                }
+            
+            if (contourBubbles.size > bubbles.size) {
+                Log.d(TAG, "║     - Contour found: ${contourBubbles.size} bubbles (before NMS)")
+                val nmsResult = applyNonMaxSuppression(contourBubbles, expectedBubbleRadius.toFloat())
+                Log.d(TAG, "║     - After NMS: ${nmsResult.size} bubbles")
+                return nmsResult
+            }
+        }
+        
+        // Apply NMS to HoughCircles result as well
+        val nmsResult = applyNonMaxSuppression(bubbles, expectedBubbleRadius.toFloat())
+        Log.d(TAG, "║     - Final bubble count (after NMS): ${nmsResult.size}")
+        return nmsResult
+    }
+    
+    /**
+     * Non-Maximum Suppression to merge overlapping bubble detections
+     */
+    private fun applyNonMaxSuppression(bubbles: List<BubbleCandidate>, minDistance: Float): List<BubbleCandidate> {
+        if (bubbles.isEmpty()) return bubbles
+        
+        // Sort by area (larger bubbles first - they're likely the main detection)
+        val sorted = bubbles.sortedByDescending { it.area }
+        val kept = mutableListOf<BubbleCandidate>()
+        val suppressed = BooleanArray(sorted.size)
+        
+        for (i in sorted.indices) {
+            if (suppressed[i]) continue
+            
+            kept.add(sorted[i])
+            
+            // Suppress all nearby bubbles
+            for (j in i + 1 until sorted.size) {
+                if (suppressed[j]) continue
+                
+                val dx = sorted[i].x - sorted[j].x
+                val dy = sorted[i].y - sorted[j].y
+                val distance = sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+                
+                if (distance < minDistance) {
+                    suppressed[j] = true
+                }
+            }
+        }
+        
+        return kept
+    }
+    
+    /**
+     * Fallback contour-based bubble detection
+     */
+    private fun detectBubblesWithContours(processedMat: Mat, originalBitmap: Bitmap): List<BubbleCandidate> {
         val contours = ArrayList<MatOfPoint>()
         val hierarchy = Mat()
-        Imgproc.findContours(processedMat, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+        Imgproc.findContours(processedMat, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
+        
+        Log.d(TAG, "║     Contour Fallback:")
+        Log.d(TAG, "║     - Total contours found: ${contours.size}")
+        
+        var rejectedByArea = 0
+        var rejectedByCircularity = 0
         
         val bubbles = contours.mapNotNull { contour ->
             val area = Imgproc.contourArea(contour)
-            if (area < BUBBLE_MIN_AREA || area > BUBBLE_MAX_AREA) return@mapNotNull null
+            if (area < BUBBLE_MIN_AREA || area > BUBBLE_MAX_AREA) {
+                rejectedByArea++
+                return@mapNotNull null
+            }
             
             val perimeter = Imgproc.arcLength(MatOfPoint2f(*contour.toArray()), true)
             val circularity = 4 * Math.PI * area / (perimeter * perimeter)
-            if (circularity < CIRCULARITY_THRESHOLD) return@mapNotNull null
+            if (circularity < CIRCULARITY_THRESHOLD) {
+                rejectedByCircularity++
+                return@mapNotNull null
+            }
             
             val center = Point()
             val radius = FloatArray(1)
@@ -328,8 +533,11 @@ class ZipgradeStyleScanner(private val context: Context) {
             )
         }
         
-        // Filter out noise (very light bubbles that are likely artifacts)
-        return bubbles.filter { it.darkness > 0.05f || it.circularity > 0.7f }
+        Log.d(TAG, "║     - Rejected by area: $rejectedByArea")
+        Log.d(TAG, "║     - Rejected by circularity: $rejectedByCircularity")
+        Log.d(TAG, "║     - Contour bubbles found: ${bubbles.size}")
+        
+        return bubbles
     }
     
     private fun calculateBubbleDarkness(bitmap: Bitmap, centerX: Int, centerY: Int, radius: Int): Float {
@@ -358,12 +566,159 @@ class ZipgradeStyleScanner(private val context: Context) {
     }
     
     /**
+     * NEW: Detect row timing marks on the left edge of each column
+     * These are small black squares that mark each question row
+     * 
+     * Strategy: Find all small solid squares, then filter by position
+     */
+    private fun detectRowTimingMarks(bitmap: Bitmap, layout: TemplateLayout): List<Point> {
+        val mat = Mat()
+        Utils.bitmapToMat(bitmap, mat)
+        
+        val gray = Mat()
+        Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
+        
+        // Apply threshold to get black marks
+        val binary = Mat()
+        Imgproc.threshold(gray, binary, 100.0, 255.0, Imgproc.THRESH_BINARY_INV)
+        
+        // Find contours
+        val contours = ArrayList<MatOfPoint>()
+        val hierarchy = Mat()
+        Imgproc.findContours(binary, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
+        
+        // Row timing marks: larger than bubbles but smaller than corner marks
+        val imageArea = bitmap.width * bitmap.height
+        val minMarkArea = imageArea * 0.0005  // ~500 pixels for 1000x1000 image
+        val maxMarkArea = imageArea * 0.008   // ~8000 pixels (smaller than corner marks)
+        
+        Log.d(TAG, "║     Timing mark detection:")
+        Log.d(TAG, "║     - Area range: ${minMarkArea.toInt()} - ${maxMarkArea.toInt()}")
+        
+        val allSquareMarks = mutableListOf<Point>()
+        
+        for (contour in contours) {
+            val area = Imgproc.contourArea(contour)
+            if (area < minMarkArea || area > maxMarkArea) continue
+            
+            val rect = Imgproc.boundingRect(contour)
+            val aspectRatio = rect.width.toFloat() / rect.height.toFloat()
+            
+            // Must be roughly square
+            if (aspectRatio < 0.5 || aspectRatio > 2.0) continue
+            
+            // Must be filled (solid black)
+            val fillRatio = area / (rect.width * rect.height)
+            if (fillRatio < 0.65) continue
+            
+            val centerX = rect.x + rect.width / 2.0
+            val centerY = rect.y + rect.height / 2.0
+            
+            // Not too close to corners (avoid corner timing marks)
+            val cornerMargin = bitmap.width * 0.08
+            val isNearCorner = (centerX < cornerMargin || centerX > bitmap.width - cornerMargin) &&
+                              (centerY < cornerMargin || centerY > bitmap.height - cornerMargin)
+            if (isNearCorner) continue
+            
+            // Only keep marks in the vertical middle (avoid header/footer)
+            if (centerY < bitmap.height * 0.18 || centerY > bitmap.height * 0.85) continue
+            
+            allSquareMarks.add(Point(centerX, centerY))
+        }
+        
+        Log.d(TAG, "║     - All square marks found: ${allSquareMarks.size}")
+        
+        if (allSquareMarks.isEmpty()) {
+            gray.release()
+            binary.release()
+            mat.release()
+            return emptyList()
+        }
+        
+        // Now filter to keep only marks that are to the LEFT of bubbles (timing marks)
+        // Sort by X to find the leftmost marks in each row
+        val sortedByX = allSquareMarks.sortedBy { it.x }
+        
+        // Find the bubble area (rightmost marks are bubbles, leftmost are timing marks)
+        val medianX = sortedByX[sortedByX.size / 2].x
+        
+        // Timing marks should be to the left of the median X
+        // But we need to handle 2 columns - so we look for marks in the left 40% of each column half
+        val halfWidth = bitmap.width / 2.0
+        
+        val rowTimingMarks = allSquareMarks.filter { mark ->
+            // Column 1 timing marks: left 20% of left half
+            val isCol1Mark = mark.x < halfWidth * 0.35
+            // Column 2 timing marks: left 20% of right half  
+            val isCol2Mark = mark.x > halfWidth * 0.5 && mark.x < halfWidth + halfWidth * 0.35
+            
+            isCol1Mark || isCol2Mark
+        }
+        
+        Log.d(TAG, "║     - Row timing marks filtered: ${rowTimingMarks.size}")
+        if (rowTimingMarks.isNotEmpty()) {
+            Log.d(TAG, "║       X range: ${rowTimingMarks.minOf { it.x }.toInt()} - ${rowTimingMarks.maxOf { it.x }.toInt()}")
+            Log.d(TAG, "║       Y positions: ${rowTimingMarks.sortedBy { it.y }.take(10).map { it.y.toInt() }.joinToString(", ")}...")
+        }
+        
+        gray.release()
+        binary.release()
+        mat.release()
+        
+        return rowTimingMarks.sortedBy { it.y }
+    }
+    
+    /**
+     * NEW: Use row timing marks to locate rows, then find bubbles to the right of each mark
+     */
+    private fun groupByRowTimingMarks(
+        rowMarks: List<Point>,
+        bubbles: List<BubbleCandidate>,
+        layout: TemplateLayout,
+        imageWidth: Int,
+        optionsPerQuestion: Int
+    ): List<List<BubbleCandidate>> {
+        if (rowMarks.isEmpty()) return emptyList()
+        
+        Log.d(TAG, "║     Using ${rowMarks.size} row timing marks for grouping")
+        
+        val avgBubbleWidth = bubbles.map { it.radius * 2 }.average().toFloat()
+        val rowTolerance = avgBubbleWidth * 0.8f  // How close bubble Y must be to mark Y
+        
+        val questions = mutableListOf<List<BubbleCandidate>>()
+        
+        for (mark in rowMarks) {
+            // Find bubbles to the RIGHT of this mark and at the same Y level
+            val rowBubbles = bubbles.filter { bubble ->
+                bubble.x > mark.x && // To the right of mark
+                bubble.x < mark.x + (imageWidth / layout.columns) * 0.9 && // Within the column
+                abs(bubble.y - mark.y) < rowTolerance // Same row
+            }.sortedBy { it.x }
+            
+            if (rowBubbles.size >= 3) { // Accept if at least 3 bubbles found
+                // Select exactly optionsPerQuestion bubbles if too many
+                val finalBubbles = if (rowBubbles.size > optionsPerQuestion) {
+                    selectBestBubbles(rowBubbles, optionsPerQuestion)
+                } else {
+                    rowBubbles.toMutableList()
+                }
+                questions.add(finalBubbles)
+            }
+        }
+        
+        Log.d(TAG, "║     - Questions from timing marks: ${questions.size}")
+        return questions
+    }
+    
+    /**
      * Column-first grouping with robust gap detection
+     * NOW: First tries row timing marks, falls back to Y-clustering
      */
     private fun groupByColumnsRobust(
         bubbles: List<BubbleCandidate>,
         totalQuestions: Int,
-        optionsPerQuestion: Int
+        optionsPerQuestion: Int,
+        originalBitmap: Bitmap? = null
     ): List<List<BubbleCandidate>> {
         val layout = when (totalQuestions) {
             20 -> TemplateLayout(2, 10)
@@ -372,64 +727,176 @@ class ZipgradeStyleScanner(private val context: Context) {
             else -> return emptyList()
         }
         
-        // Sort by X (columns)
-        val sortedByX = bubbles.sortedBy { it.x }
+        Log.d(TAG, "║     Grouping Details:")
+        Log.d(TAG, "║     - Expected layout: ${layout.columns} columns x ${layout.questionsPerColumn} questions/column")
+        Log.d(TAG, "║     - Total bubbles to group: ${bubbles.size}")
         
-        // Calculate dynamic column gap
-        val avgBubbleWidth = bubbles.map { it.radius * 2 }.average().toFloat()
-        val columnGapThreshold = avgBubbleWidth * COLUMN_GAP_MULTIPLIER
-        
-        Log.d(TAG, "Dynamic column gap: $columnGapThreshold")
-        
-        // Divide into columns
-        val columns = mutableListOf<MutableList<BubbleCandidate>>()
-        var currentColumn = mutableListOf<BubbleCandidate>()
-        var lastX = sortedByX[0].x
-        
-        for (bubble in sortedByX) {
-            if (bubble.x - lastX > columnGapThreshold && currentColumn.isNotEmpty()) {
-                columns.add(currentColumn)
-                currentColumn = mutableListOf()
-            }
-            currentColumn.add(bubble)
-            lastX = bubble.x
+        if (bubbles.isEmpty()) {
+            Log.e(TAG, "║     - ERROR: No bubbles to group!")
+            return emptyList()
         }
-        if (currentColumn.isNotEmpty()) columns.add(currentColumn)
         
-        Log.d(TAG, "Detected ${columns.size} columns (expected ${layout.columns})")
+        // NEW: Try to use row timing marks first (more accurate)
+        if (originalBitmap != null) {
+            val rowMarks = detectRowTimingMarks(originalBitmap, layout)
+            if (rowMarks.size >= totalQuestions * 0.7) { // If we found at least 70% of expected marks
+                Log.d(TAG, "║     - Using ROW TIMING MARKS for grouping (found ${rowMarks.size}/${totalQuestions})")
+                val questions = groupByRowTimingMarks(rowMarks, bubbles, layout, originalBitmap.width, optionsPerQuestion)
+                if (questions.size >= totalQuestions * 0.7) {
+                    return questions.take(totalQuestions)
+                }
+                Log.d(TAG, "║     - Timing mark grouping insufficient (${questions.size}), falling back to Y-clustering")
+            }
+        }
         
-        // Process each column
+        Log.d(TAG, "║     - Using Y-CLUSTERING fallback for grouping")
+        
+        // Sort by X first
+        val sortedByX = bubbles.sortedBy { it.x }
+        val avgBubbleWidth = bubbles.map { it.radius * 2 }.average().toFloat()
+        
+        Log.d(TAG, "║     - Avg bubble width: ${String.format("%.1f", avgBubbleWidth)}")
+        
+        // Use K-means style clustering to find columns based on expected count
+        val columns = clusterByXPosition(bubbles, layout.columns, avgBubbleWidth)
+        
+        Log.d(TAG, "║     - Detected ${columns.size} columns (expected ${layout.columns})")
+        columns.forEachIndexed { i, col ->
+            if (col.isNotEmpty()) {
+                Log.d(TAG, "║       Column $i: ${col.size} bubbles, X range: ${col.minOf { it.x }.toInt()}-${col.maxOf { it.x }.toInt()}")
+            }
+        }
+        
+        // Process each column into rows/questions
         val allQuestions = mutableListOf<List<BubbleCandidate>>()
-        for (column in columns) {
-            val questions = groupColumnIntoQuestions(column.sortedBy { it.y }, optionsPerQuestion)
+        for ((colIndex, column) in columns.withIndex()) {
+            if (column.isEmpty()) continue
+            
+            // Sort column by Y, then group by rows
+            val sortedByY = column.sortedBy { it.y }
+            val questions = groupColumnIntoRows(sortedByY, optionsPerQuestion, avgBubbleWidth)
+            Log.d(TAG, "║       Column $colIndex → ${questions.size} questions")
             allQuestions.addAll(questions)
         }
         
+        Log.d(TAG, "║     - Total questions grouped: ${allQuestions.size}")
         return allQuestions.take(totalQuestions)
     }
     
-    private fun groupColumnIntoQuestions(column: List<BubbleCandidate>, optionsPerQuestion: Int): List<List<BubbleCandidate>> {
-        val questions = mutableListOf<MutableList<BubbleCandidate>>()
-        var currentQuestion = mutableListOf<BubbleCandidate>()
-        var lastY = column[0].y
+    /**
+     * Cluster bubbles into columns using their X positions
+     */
+    private fun clusterByXPosition(bubbles: List<BubbleCandidate>, expectedColumns: Int, avgBubbleWidth: Float): List<List<BubbleCandidate>> {
+        if (bubbles.isEmpty()) return emptyList()
         
-        for (bubble in column) {
-            if (bubble.y - lastY > ROW_GAP_THRESHOLD && currentQuestion.isNotEmpty()) {
-                if (currentQuestion.size == optionsPerQuestion) {
-                    questions.add(currentQuestion.sortedBy { it.x }.toMutableList())
-                }
-                currentQuestion = mutableListOf()
+        val sortedByX = bubbles.sortedBy { it.x }
+        val minX = sortedByX.first().x
+        val maxX = sortedByX.last().x
+        val totalWidth = maxX - minX
+        
+        // Estimate column width
+        val columnWidth = totalWidth / expectedColumns
+        
+        Log.d(TAG, "║     - X range: ${minX.toInt()}-${maxX.toInt()}, columnWidth: ${columnWidth.toInt()}")
+        
+        // Assign each bubble to a column based on its X position
+        val columns = List(expectedColumns) { mutableListOf<BubbleCandidate>() }
+        
+        for (bubble in bubbles) {
+            val columnIndex = ((bubble.x - minX) / columnWidth).toInt().coerceIn(0, expectedColumns - 1)
+            columns[columnIndex].add(bubble)
+        }
+        
+        return columns
+    }
+    
+    /**
+     * Group a column of bubbles into rows (questions)
+     * For each row, select exactly 5 bubbles that are most aligned horizontally
+     */
+    private fun groupColumnIntoRows(sortedByY: List<BubbleCandidate>, optionsPerQuestion: Int, avgBubbleWidth: Float): List<List<BubbleCandidate>> {
+        if (sortedByY.isEmpty()) return emptyList()
+        
+        // Row gap: Use the vertical spacing between bubbles
+        // For a standard answer sheet, row height is typically 1.5-2x bubble diameter
+        // But within a row, bubbles are tightly packed (gap < 0.5x diameter)
+        val rowGapThreshold = avgBubbleWidth * 0.6f  // Reduced to catch smaller gaps
+        
+        Log.d(TAG, "║         Row grouping: ${sortedByY.size} bubbles, gap threshold: ${String.format("%.1f", rowGapThreshold)}")
+        
+        val rows = mutableListOf<MutableList<BubbleCandidate>>()
+        var currentRow = mutableListOf<BubbleCandidate>()
+        var lastY = sortedByY[0].y
+        
+        for (bubble in sortedByY) {
+            val yGap = bubble.y - lastY
+            
+            if (yGap > rowGapThreshold && currentRow.isNotEmpty()) {
+                // Save current row
+                rows.add(currentRow.sortedBy { it.x }.toMutableList())
+                currentRow = mutableListOf()
             }
-            currentQuestion.add(bubble)
+            
+            currentRow.add(bubble)
             lastY = bubble.y
         }
         
-        if (currentQuestion.size == optionsPerQuestion) {
-            questions.add(currentQuestion.sortedBy { it.x }.toMutableList())
+        // Don't forget the last row
+        if (currentRow.isNotEmpty()) {
+            rows.add(currentRow.sortedBy { it.x }.toMutableList())
         }
         
-        return questions
+        Log.d(TAG, "║         Found ${rows.size} raw rows with sizes: ${rows.map { it.size }.joinToString(", ")}")
+        
+        // For each row, if it has more than 5 bubbles, select the 5 most evenly spaced
+        // If it has fewer than 5, keep it if it has at least 4
+        val normalizedRows = rows.mapNotNull { row ->
+            when {
+                row.size == optionsPerQuestion -> row // Perfect!
+                row.size > optionsPerQuestion -> {
+                    // Too many bubbles - select the 5 with best horizontal spacing
+                    selectBestBubbles(row, optionsPerQuestion)
+                }
+                row.size >= optionsPerQuestion - 1 -> row // Accept 4 bubbles (one might be missing)
+                else -> null // Too few bubbles
+            }
+        }
+        
+        Log.d(TAG, "║         Normalized rows: ${normalizedRows.size} (sizes: ${normalizedRows.map { it.size }.joinToString(", ")})")
+        
+        return normalizedRows
     }
+    
+    /**
+     * Select the best N bubbles from a row based on even horizontal spacing
+     */
+    private fun selectBestBubbles(row: List<BubbleCandidate>, count: Int): MutableList<BubbleCandidate> {
+        if (row.size <= count) return row.toMutableList()
+        
+        val sorted = row.sortedBy { it.x }
+        
+        // Calculate expected spacing based on first and last bubble
+        val totalWidth = sorted.last().x - sorted.first().x
+        val expectedSpacing = totalWidth / (count - 1)
+        
+        // Greedily select bubbles closest to expected positions
+        val selected = mutableListOf<BubbleCandidate>()
+        selected.add(sorted.first()) // Always include first
+        
+        for (i in 1 until count - 1) {
+            val expectedX = sorted.first().x + i * expectedSpacing
+            val closest = sorted.filter { it !in selected }
+                .minByOrNull { kotlin.math.abs(it.x - expectedX) }
+            if (closest != null) {
+                selected.add(closest)
+            }
+        }
+        
+        selected.add(sorted.last()) // Always include last
+        
+        return selected.sortedBy { it.x }.toMutableList()
+    }
+    
     
     /**
      * Extract answers WITH double-mark and erased mark detection

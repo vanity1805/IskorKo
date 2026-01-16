@@ -88,8 +88,8 @@ fun StudentDashboardScreen(
                         }
                     ) {
                         IconButton(onClick = { showNotifications = true }) {
-                            Icon(Icons.Filled.Notifications, contentDescription = "Notifications")
-                        }
+                        Icon(Icons.Filled.Notifications, contentDescription = "Notifications")
+                    }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -972,8 +972,8 @@ fun StudentAllGradesView(
     onGradeClick: (StudentGradeItem) -> Unit
 ) {
     if (isLoading) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
+    Box(
+        modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
             CircularProgressIndicator(color = Color(0xFF1976D2))
@@ -1015,9 +1015,9 @@ fun StudentGradeCard(grade: StudentGradeItem, onClick: () -> Unit) {
                 modifier = Modifier
                     .size(60.dp)
                     .background(scoreColor.copy(alpha = 0.1f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = "${grade.percentage.toInt()}%",
                         fontFamily = NeueMachina,
@@ -1053,13 +1053,13 @@ fun StudentGradeCard(grade: StudentGradeItem, onClick: () -> Unit) {
                 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // Date
-                    Icon(
+            Icon(
                         Icons.Filled.CalendarToday,
-                        contentDescription = null,
+                contentDescription = null,
                         modifier = Modifier.size(12.dp),
-                        tint = Color.Gray
-                    )
-                    Text(
+                tint = Color.Gray
+            )
+            Text(
                         text = " ${formatStudentDate(grade.gradedDate)}",
                         fontSize = 11.sp,
                         color = Color.Gray
@@ -1098,9 +1098,9 @@ fun StudentGradeCard(grade: StudentGradeItem, onClick: () -> Unit) {
                         text = "${if (diff >= 0) "+" else ""}${diff.toInt()}%",
                         fontSize = 10.sp,
                         color = if (diff >= 0) Color(0xFF4CAF50) else Color(0xFFE53935),
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
+                fontWeight = FontWeight.Bold
+            )
+            Text(
                         text = "vs avg",
                         fontSize = 8.sp,
                         color = Color.Gray
@@ -1174,7 +1174,7 @@ fun StudentClassGradesCard(
                     Text(
                         text = "${classGroup.averageScore.toInt()}%",
                         fontFamily = NeueMachina,
-                        fontSize = 14.sp,
+                fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = getScoreColor(classGroup.averageScore)
                     )
@@ -1192,9 +1192,9 @@ fun StudentClassGradesCard(
                     Text(
                         text = "${classGroup.examCount} exams · Avg: ${classGroup.averageScore.toInt()}%",
                         fontSize = 12.sp,
-                        color = Color.Gray
-                    )
-                }
+                color = Color.Gray
+            )
+        }
                 
                 Icon(
                     if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
@@ -1276,11 +1276,11 @@ fun StudentSortBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = Color.White
     ) {
-        Column(
-            modifier = Modifier
+    Column(
+        modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
-        ) {
+            .padding(16.dp)
+    ) {
             Text(
                 text = "Sort Grades",
                 fontFamily = NeueMachina,
@@ -1348,7 +1348,7 @@ fun StudentFilterBottomSheet(
                 .padding(16.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1423,8 +1423,8 @@ fun StudentGradeDetailDialog(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                     Text(
                         text = "Grade Details",
                         fontFamily = NeueMachina,
@@ -1448,11 +1448,11 @@ fun StudentGradeDetailDialog(
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
+                    Text(
                             text = "${grade.percentage.toInt()}%",
                             fontFamily = NeueMachina,
                             fontSize = 56.sp,
-                            fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.Bold,
                             color = scoreColor
                         )
                         Text(
@@ -1544,12 +1544,12 @@ fun StudentGradeDetailDialog(
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 // Answer Statistics
-                Text(
+                    Text(
                     text = "Answer Breakdown",
-                    fontFamily = NeueMachina,
+                        fontFamily = NeueMachina,
                     fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                        fontWeight = FontWeight.Bold
+                    )
                 
                 Spacer(modifier = Modifier.height(12.dp))
                 
@@ -1613,8 +1613,8 @@ fun StudentGradeDetailDialog(
                                     Text(
                                         text = "${index + 1}",
                                         fontSize = 8.sp,
-                                        color = Color.Gray
-                                    )
+                        color = Color.Gray
+                    )
                                     Text(
                                         text = if (answer.isEmpty() || answer == "-") "-" else answer,
                                         fontSize = 14.sp,
@@ -1635,16 +1635,16 @@ fun StudentGradeDetailDialog(
                             color = Color.Gray,
                             modifier = Modifier.padding(top = 8.dp)
                         )
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(24.dp))
-                
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(24.dp))
+        
                 // Close Button
                 Button(
                     onClick = onDismiss,
-                    modifier = Modifier
-                        .fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
                         .height(48.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF1976D2)
@@ -1659,8 +1659,8 @@ fun StudentGradeDetailDialog(
 
 @Composable
 fun StudentDetailRow(label: String, value: String) {
-    Row(
-        modifier = Modifier
+            Row(
+                modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween
@@ -1684,7 +1684,7 @@ fun StudentStatBox(label: String, value: String, color: Color) {
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .background(color.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-            .padding(16.dp)
+                    .padding(16.dp)
     ) {
         Text(
             text = value,
@@ -1764,8 +1764,8 @@ fun StudentProfileTab(
             shape = RoundedCornerShape(16.dp)
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -1775,7 +1775,7 @@ fun StudentProfileTab(
                 ) {
                     if (isUploadingPhoto) {
                         Box(
-                            modifier = Modifier
+                modifier = Modifier
                                 .size(100.dp)
                                 .background(Color.LightGray.copy(alpha = 0.5f), CircleShape),
                             contentAlignment = Alignment.Center
@@ -1878,8 +1878,8 @@ fun StudentProfileTab(
                 )
                 
                 Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                     Icon(
                         Icons.Filled.School,
                         contentDescription = null,
