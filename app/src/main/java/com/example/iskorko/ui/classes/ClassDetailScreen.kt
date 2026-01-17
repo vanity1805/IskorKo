@@ -20,7 +20,10 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.iskorko.ui.theme.NeueMachina
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.content.Intent
 import android.widget.Toast
+import androidx.core.content.FileProvider
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,6 +35,7 @@ fun ClassDetailScreen(
     val context = LocalContext.current
     var selectedTab by remember { mutableStateOf(0) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showMoreMenu by remember { mutableStateOf(false) }
     
     LaunchedEffect(classId) {
         viewModel.loadClassDetails(classId)
@@ -61,11 +65,20 @@ fun ClassDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* Share class code */ }) {
+                    IconButton(
+                        onClick = {
+                            val shareText = "Join my class \"${viewModel.className.value}\" " +
+                                "(${viewModel.section.value}) with code: ${viewModel.classCode.value}"
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, shareText)
+                            }
+                            context.startActivity(
+                                Intent.createChooser(shareIntent, "Share class code")
+                            )
+                        }
+                    ) {
                         Icon(Icons.Filled.Share, contentDescription = "Share")
-                    }
-                    IconButton(onClick = { /* More options */ }) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = "More")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -181,9 +194,65 @@ fun ClassDetailScreen(
             
             // Tab Content
             when (selectedTab) {
-                0 -> RosterTab(viewModel.students.value, viewModel.isLoading.value)
+                0 -> RosterTab(
+                    students = viewModel.students.value,
+                    isLoading = viewModel.isLoading.value,
+                    onRemoveStudent = { student ->
+                        viewModel.removeStudentFromClass(
+                            classId = classId,
+                            studentId = student.id,
+                            onSuccess = {
+                                Toast.makeText(context, "Student removed", Toast.LENGTH_SHORT).show()
+                            },
+                            onError = { error ->
+                                Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                )
                 1 -> ExamsTab(viewModel.exams.value, viewModel.isLoading.value, navController)
                 2 -> SettingsTab(
+                    classId = classId,
+                    className = viewModel.className.value,
+                    section = viewModel.section.value,
+                    archived = viewModel.archived.value,
+                    students = viewModel.students.value,
+                    onUpdateClassInfo = { updatedName, updatedSection ->
+                        viewModel.updateClassInfo(
+                            classId = classId,
+                            updatedName = updatedName,
+                            updatedSection = updatedSection,
+                            onSuccess = {
+                                Toast.makeText(context, "Class updated", Toast.LENGTH_SHORT).show()
+                            },
+                            onError = { error ->
+                                Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    },
+                    onArchiveClass = {
+                        viewModel.archiveClass(
+                            classId = classId,
+                            onSuccess = {
+                                Toast.makeText(context, "Class archived", Toast.LENGTH_SHORT).show()
+                                navController.popBackStack()
+                            },
+                            onError = { error ->
+                                Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    },
+                    onUnarchiveClass = {
+                        viewModel.unarchiveClass(
+                            classId = classId,
+                            onSuccess = {
+                                Toast.makeText(context, "Class unarchived", Toast.LENGTH_SHORT).show()
+                            },
+                            onError = { error ->
+                                Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    },
                     onDeleteClass = { showDeleteDialog = true }
                 )
             }
@@ -227,7 +296,11 @@ fun ClassDetailScreen(
 }
 
 @Composable
-fun RosterTab(students: List<StudentInfo>, isLoading: Boolean) {
+fun RosterTab(
+    students: List<StudentInfo>,
+    isLoading: Boolean,
+    onRemoveStudent: (StudentInfo) -> Unit
+) {
     if (isLoading) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -271,14 +344,16 @@ fun RosterTab(students: List<StudentInfo>, isLoading: Boolean) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(students) { student ->
-                StudentCard(student)
+                StudentCard(student = student, onRemove = { onRemoveStudent(student) })
             }
         }
     }
 }
 
 @Composable
-fun StudentCard(student: StudentInfo) {
+fun StudentCard(student: StudentInfo, onRemove: () -> Unit) {
+    var showRemoveDialog by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color.White)
@@ -317,7 +392,40 @@ fun StudentCard(student: StudentInfo) {
                     color = Color.Gray
                 )
             }
+            
+            Spacer(modifier = Modifier.weight(1f))
+            
+            IconButton(onClick = { showRemoveDialog = true }) {
+                Icon(
+                    Icons.Filled.PersonRemove,
+                    contentDescription = "Remove student",
+                    tint = Color(0xFF800202)
+                )
+            }
         }
+    }
+    
+    if (showRemoveDialog) {
+        AlertDialog(
+            onDismissRequest = { showRemoveDialog = false },
+            title = { Text("Remove Student?", fontFamily = NeueMachina) },
+            text = { Text("Remove ${student.fullName} from this class?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onRemove()
+                        showRemoveDialog = false
+                    }
+                ) {
+                    Text("Remove", color = Color.Red)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRemoveDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -427,7 +535,23 @@ fun ExamCard(exam: ExamInfo, onClick: () -> Unit) {
 }
 
 @Composable
-fun SettingsTab(onDeleteClass: () -> Unit) {
+fun SettingsTab(
+    classId: String,
+    className: String,
+    section: String,
+    archived: Boolean,
+    students: List<StudentInfo>,
+    onUpdateClassInfo: (String, String) -> Unit,
+    onArchiveClass: () -> Unit,
+    onUnarchiveClass: () -> Unit,
+    onDeleteClass: () -> Unit
+) {
+    val context = LocalContext.current
+    var showEditDialog by remember { mutableStateOf(false) }
+    var showArchiveDialog by remember { mutableStateOf(false) }
+    var editName by remember(className) { mutableStateOf(className) }
+    var editSection by remember(section) { mutableStateOf(section) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -448,6 +572,89 @@ fun SettingsTab(onDeleteClass: () -> Unit) {
                 )
                 
                 Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = { showEditDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFE3F2FD),
+                        contentColor = Color(0xFF1976D2)
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Filled.Edit, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Edit Class Info", fontWeight = FontWeight.Bold)
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Button(
+                    onClick = {
+                        if (students.isEmpty()) {
+                            Toast.makeText(context, "No students to export", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        val header = "Full Name,Email"
+                        val rows = students.joinToString("\n") { student ->
+                            val safeName = student.fullName.replace("\"", "\"\"")
+                            val safeEmail = student.email.replace("\"", "\"\"")
+                            "\"$safeName\",\"$safeEmail\""
+                        }
+                        val csv = "$header\n$rows"
+                        val file = File(context.cacheDir, "class_${classId}_roster.csv")
+                        file.writeText(csv)
+
+                        val uri = FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            file
+                        )
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/csv"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            putExtra(Intent.EXTRA_SUBJECT, "Class roster")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(
+                            Intent.createChooser(shareIntent, "Export roster")
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFE8F5E9),
+                        contentColor = Color(0xFF2E7D32)
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Filled.FileDownload, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Export Roster (CSV)", fontWeight = FontWeight.Bold)
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Button(
+                    onClick = { showArchiveDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (archived) Color(0xFFE8F5E9) else Color(0xFFFFF8E1),
+                        contentColor = if (archived) Color(0xFF2E7D32) else Color(0xFFF57C00)
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(
+                        if (archived) Icons.Filled.Unarchive else Icons.Filled.Inventory2,
+                        contentDescription = null
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        if (archived) "Unarchive Class" else "Archive Class",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
                 
                 Button(
                     onClick = onDeleteClass,
@@ -464,5 +671,99 @@ fun SettingsTab(onDeleteClass: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (showEditDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditDialog = false },
+            title = { Text("Edit Class Info", fontFamily = NeueMachina) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text("Class Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = editSection,
+                        onValueChange = { editSection = it },
+                        label = { Text("Section") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val trimmedName = editName.trim()
+                        val trimmedSection = editSection.trim()
+                        if (trimmedName.isBlank() || trimmedSection.isBlank()) {
+                            Toast.makeText(
+                                context,
+                                "Class name and section are required",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            return@TextButton
+                        }
+                        onUpdateClassInfo(trimmedName, trimmedSection)
+                        showEditDialog = false
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showArchiveDialog) {
+        AlertDialog(
+            onDismissRequest = { showArchiveDialog = false },
+            title = {
+                Text(
+                    if (archived) "Unarchive Class?" else "Archive Class?",
+                    fontFamily = NeueMachina
+                )
+            },
+            text = {
+                Text(
+                    if (archived) {
+                        "This class will be restored to active lists."
+                    } else {
+                        "Archiving hides this class from active lists. You can restore it later."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (archived) {
+                            onUnarchiveClass()
+                        } else {
+                            onArchiveClass()
+                        }
+                        showArchiveDialog = false
+                    }
+                ) {
+                    Text(
+                        if (archived) "Unarchive" else "Archive",
+                        color = if (archived) Color(0xFF2E7D32) else Color(0xFFF57C00)
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showArchiveDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

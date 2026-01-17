@@ -14,7 +14,8 @@ data class ClassItem(
     val section: String = "",
     val classCode: String = "",
     val studentCount: Int = 0,
-    val examCount: Int = 0
+    val examCount: Int = 0,
+    val archived: Boolean = false
 )
 
 data class GradeItem(
@@ -99,7 +100,8 @@ data class NotificationItem(
     val message: String = "",
     val timestamp: Long = 0L,
     val isRead: Boolean = false,
-    val relatedId: String? = null // classId, examId, etc.
+    val relatedId: String? = null, // classId, examId, etc.
+    val classLabel: String? = null
 ) {
     fun getTimeAgo(): String {
         val now = System.currentTimeMillis()
@@ -140,6 +142,9 @@ class ProfessorDashboardViewModel : ViewModel() {
     
     var classes = mutableStateOf<List<ClassItem>>(emptyList())
         private set
+
+    var archivedClasses = mutableStateOf<List<ClassItem>>(emptyList())
+        private set
     
     var isLoading = mutableStateOf(true)
         private set
@@ -178,6 +183,7 @@ class ProfessorDashboardViewModel : ViewModel() {
     private var gradesListener: ListenerRegistration? = null
     private var examResultsListeners = mutableListOf<ListenerRegistration>()
     private var notificationsListener: ListenerRegistration? = null
+    private var allClasses: List<ClassItem> = emptyList()
     
     var notifications = mutableStateOf<List<NotificationItem>>(emptyList())
         private set
@@ -225,6 +231,8 @@ class ProfessorDashboardViewModel : ViewModel() {
                 
                 if (snapshot == null || snapshot.isEmpty) {
                     classes.value = emptyList()
+                    archivedClasses.value = emptyList()
+                    allClasses = emptyList()
                     isLoading.value = false
                     return@addSnapshotListener
                 }
@@ -253,13 +261,17 @@ class ProfessorDashboardViewModel : ViewModel() {
                             section = doc.getString("section") ?: "",
                             classCode = doc.getString("classCode") ?: "",
                             studentCount = (doc.get("studentIds") as? List<*>)?.size ?: 0,
-                            examCount = examSnapshot.size()
+                            examCount = examSnapshot.size(),
+                            archived = doc.getBoolean("archived") ?: false
                         )
                     )
                     
                     processedCount++
                     if (processedCount == classDocs.size) {
-                        classes.value = loadedClasses.sortedBy { it.className }
+                        val sortedClasses = loadedClasses.sortedBy { it.className }
+                        allClasses = sortedClasses
+                        classes.value = sortedClasses.filter { !it.archived }
+                        archivedClasses.value = sortedClasses.filter { it.archived }
                         isLoading.value = false
                     }
                 }
@@ -271,13 +283,17 @@ class ProfessorDashboardViewModel : ViewModel() {
                             section = doc.getString("section") ?: "",
                             classCode = doc.getString("classCode") ?: "",
                             studentCount = (doc.get("studentIds") as? List<*>)?.size ?: 0,
-                            examCount = 0
+                            examCount = 0,
+                            archived = doc.getBoolean("archived") ?: false
                         )
                     )
                     
                     processedCount++
                     if (processedCount == classDocs.size) {
-                        classes.value = loadedClasses.sortedBy { it.className }
+                        val sortedClasses = loadedClasses.sortedBy { it.className }
+                        allClasses = sortedClasses
+                        classes.value = sortedClasses.filter { !it.archived }
+                        archivedClasses.value = sortedClasses.filter { it.archived }
                         isLoading.value = false
                     }
                 }
@@ -410,7 +426,7 @@ class ProfessorDashboardViewModel : ViewModel() {
                                     val classId = examDoc.getString("classId") ?: ""
                                     
                                     // Get class name from loaded classes
-                                    val classItem = classes.value.find { it.id == classId }
+                                    val classItem = allClasses.find { it.id == classId }
                                     val classNameDisplay = if (classItem != null) {
                                         "${classItem.className} - ${classItem.section}"
                                     } else {
@@ -879,7 +895,8 @@ class ProfessorDashboardViewModel : ViewModel() {
                             message = doc.getString("message") ?: "",
                             timestamp = doc.getLong("timestamp") ?: 0L,
                             isRead = doc.getBoolean("isRead") ?: false,
-                            relatedId = doc.getString("relatedId")
+                            relatedId = doc.getString("relatedId"),
+                            classLabel = doc.getString("classLabel")
                         )
                     } catch (e: Exception) {
                         Log.e("Notifications", "Error parsing notification: ${e.message}")

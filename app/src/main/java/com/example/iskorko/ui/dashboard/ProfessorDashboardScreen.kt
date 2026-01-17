@@ -37,6 +37,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
 import com.example.iskorko.ui.components.IskorKoToastHost
 import com.example.iskorko.ui.components.rememberToastState
+import android.content.Intent
+import androidx.core.content.FileProvider
+import java.io.File
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -140,6 +143,7 @@ fun ProfessorDashboardScreen(
             when (selectedTab) {
                 0 -> ClassesTab(
                     classes = viewModel.classes.value,
+                    archivedClasses = viewModel.archivedClasses.value,
                     isLoading = viewModel.isLoading.value,
                     navController = navController
                 )
@@ -161,8 +165,14 @@ fun ProfessorDashboardScreen(
     
     // Notifications Bottom Sheet
     if (showNotifications) {
+        val classLabelById = remember(viewModel.classes.value, viewModel.archivedClasses.value) {
+            (viewModel.classes.value + viewModel.archivedClasses.value).associate { classItem ->
+                classItem.id to "${classItem.className} - ${classItem.section}"
+            }
+        }
         NotificationsBottomSheet(
             notifications = viewModel.notifications.value,
+            classLabelById = classLabelById,
             onDismiss = { showNotifications = false },
             onMarkAsRead = { viewModel.markNotificationAsRead(it) },
             onMarkAllAsRead = { viewModel.markAllNotificationsAsRead() }
@@ -178,6 +188,7 @@ fun ProfessorDashboardScreen(
 @Composable
 fun NotificationsBottomSheet(
     notifications: List<NotificationItem>,
+    classLabelById: Map<String, String>,
     onDismiss: () -> Unit,
     onMarkAsRead: (String) -> Unit,
     onMarkAllAsRead: () -> Unit
@@ -246,6 +257,8 @@ fun NotificationsBottomSheet(
                     items(notifications) { notification ->
                         NotificationCard(
                             notification = notification,
+                            classLabel = classLabelById[notification.relatedId]
+                                ?: notification.classLabel,
                             onClick = { onMarkAsRead(notification.id) }
                         )
                     }
@@ -260,6 +273,7 @@ fun NotificationsBottomSheet(
 @Composable
 fun NotificationCard(
     notification: NotificationItem,
+    classLabel: String?,
     onClick: () -> Unit
 ) {
     Card(
@@ -335,7 +349,15 @@ fun NotificationCard(
                 }
                 
                 Spacer(modifier = Modifier.height(4.dp))
-                
+                if (!classLabel.isNullOrBlank()) {
+                    Text(
+                        text = classLabel,
+                        fontSize = 12.sp,
+                        color = Color(0xFF800202),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
                 Text(
                     text = notification.message,
                     fontSize = 12.sp,
@@ -359,6 +381,7 @@ fun NotificationCard(
 @Composable
 fun ClassesTab(
     classes: List<ClassItem>,
+    archivedClasses: List<ClassItem>,
     isLoading: Boolean,
     navController: NavHostController
 ) {
@@ -417,7 +440,7 @@ fun ClassesTab(
             ) {
                 CircularProgressIndicator(color = Color(0xFF800202))
             }
-        } else if (classes.isEmpty()) {
+        } else if (classes.isEmpty() && archivedClasses.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -446,10 +469,39 @@ fun ClassesTab(
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(classes) { classItem ->
-                    ClassCard(classItem = classItem, onClick = {
-                        navController.navigate("classDetail/${classItem.id}")
-                    })
+                if (classes.isEmpty()) {
+                    item {
+                        Text(
+                            text = "No active classes",
+                            fontSize = 14.sp,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                } else {
+                    items(classes) { classItem ->
+                        ClassCard(classItem = classItem, onClick = {
+                            navController.navigate("classDetail/${classItem.id}")
+                        })
+                    }
+                }
+                
+                if (archivedClasses.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Archived Classes",
+                            fontFamily = NeueMachina,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                    items(archivedClasses) { classItem ->
+                        ClassCard(classItem = classItem, onClick = {
+                            navController.navigate("classDetail/${classItem.id}")
+                        })
+                    }
                 }
             }
         }
@@ -573,6 +625,7 @@ fun GradesTab(viewModel: ProfessorDashboardViewModel) {
     var showSortMenu by remember { mutableStateOf(false) }
     var selectedGrade by remember { mutableStateOf<GradeItem?>(null) }
     var isContentVisible by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     
     // Trigger enter animation
     LaunchedEffect(Unit) {
@@ -626,6 +679,39 @@ fun GradesTab(viewModel: ProfessorDashboardViewModel) {
             onSearchChange = { viewModel.setSearchQuery(it) },
             onFilterClick = { showFilterMenu = true },
             onSortClick = { showSortMenu = true },
+            onExportClick = {
+                val grades = viewModel.getFilteredAndSortedGrades()
+                if (grades.isEmpty()) {
+                    return@SearchAndFilterBar
+                }
+
+                val header = "Student,Class,Exam,Score,Total,Percent,Date"
+                val rows = grades.joinToString("\n") { grade ->
+                    val safeStudent = grade.studentName.replace("\"", "\"\"")
+                    val safeClass = grade.className.replace("\"", "\"\"")
+                    val safeExam = grade.examName.replace("\"", "\"\"")
+                    val percent = String.format("%.2f", grade.percentage)
+                    "\"$safeStudent\",\"$safeClass\",\"$safeExam\",${grade.score},${grade.totalPoints},$percent,${grade.gradedDate}"
+                }
+                val csv = "$header\n$rows"
+                val file = File(context.cacheDir, "grades_export.csv")
+                file.writeText(csv)
+
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/csv"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_SUBJECT, "Grades Export")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(
+                    Intent.createChooser(shareIntent, "Export grades")
+                )
+            },
             hasFilters = viewModel.selectedClassFilter.value != null || 
                         viewModel.selectedExamFilter.value != null
         )
@@ -805,6 +891,7 @@ fun SearchAndFilterBar(
     onSearchChange: (String) -> Unit,
     onFilterClick: () -> Unit,
     onSortClick: () -> Unit,
+    onExportClick: () -> Unit,
     hasFilters: Boolean
 ) {
     Row(
@@ -853,6 +940,10 @@ fun SearchAndFilterBar(
         
         IconButton(onClick = onSortClick) {
             Icon(Icons.Filled.Sort, contentDescription = "Sort")
+        }
+        
+        IconButton(onClick = onExportClick) {
+            Icon(Icons.Filled.FileDownload, contentDescription = "Export CSV")
         }
     }
 }
@@ -1939,6 +2030,7 @@ fun ProfileTab(
     var showEditProfileDialog by remember { mutableStateOf(false) }
     var showChangePasswordDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showHelpDialog by remember { mutableStateOf(false) }
     var showLogoutConfirmDialog by remember { mutableStateOf(false) }
     var showPhotoOptionsDialog by remember { mutableStateOf(false) }
     
@@ -2236,7 +2328,7 @@ fun ProfileTab(
                     icon = Icons.Filled.Help,
                     title = "Help & Support",
                     subtitle = "Get help with the app",
-                    onClick = { /* TODO: Open help */ }
+                    onClick = { showHelpDialog = true }
                 )
             }
         }
@@ -2355,6 +2447,46 @@ fun ProfileTab(
     // About Dialog
     if (showAboutDialog) {
         AboutDialog(onDismiss = { showAboutDialog = false })
+    }
+
+    if (showHelpDialog) {
+        AlertDialog(
+            onDismissRequest = { showHelpDialog = false },
+            title = { Text("Help & Support", fontFamily = NeueMachina) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text("For Professors", fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Q: What if the app won't scan the paper?", fontWeight = FontWeight.Bold)
+                    Text(
+                        "A: Ensure you are in a well-lit area and the paper is placed on a flat surface. " +
+                            "Avoid shadows on the answer sheet. Check if the app has camera permissions enabled."
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Q: Do I need an internet connection to use the app?", fontWeight = FontWeight.Bold)
+                    Text("A: Yes. A stable internet connection is required to log in, scan answer sheets, and sync class data.")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Q: Can I use any type of answer sheet?", fontWeight = FontWeight.Bold)
+                    Text("A: No. You must use the standard answer sheet template designed for IskorKo. If the design is altered, the detection process may fail.")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Q: Can I export the grades for my class record?", fontWeight = FontWeight.Bold)
+                    Text("A: Yes. You can download class reports in Excel/CSV formats for your personal records.")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Q: Can IskorKo check essay or fill-in-the-blank questions?", fontWeight = FontWeight.Bold)
+                    Text("A: No. The system is designed specifically for paper-based multiple-choice exams using a standard answer sheet template.")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showHelpDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
     }
     
     // Logout Confirmation Dialog

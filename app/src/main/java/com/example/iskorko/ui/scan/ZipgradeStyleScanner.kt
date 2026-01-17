@@ -80,7 +80,7 @@ class ZipgradeStyleScanner(private val context: Context) {
             
             // Step 3: Detect bubbles with quality filtering
             Log.d(TAG, "║ STEP 3: Bubble Detection...")
-            val bubbles = detectBubblesRobust(processedMat, correctedBitmap)
+            val bubbles = detectBubblesRobust(processedMat, correctedBitmap, totalQuestions, optionsPerQuestion)
             Log.d(TAG, "║   → Detected ${bubbles.size} bubbles")
             
             if (bubbles.isEmpty()) {
@@ -244,8 +244,18 @@ class ZipgradeStyleScanner(private val context: Context) {
             val solidity = area / rectArea
             if (solidity < 0.5) return@mapNotNull null // More lenient - was 0.6
             
+            val centerX = rect.x + rect.width / 2.0
+            val centerY = rect.y + rect.height / 2.0
+
+            // Corner markers must be near the image edges (avoid inner timing marks)
+            val edgeMarginX = width * 0.15
+            val edgeMarginY = height * 0.15
+            val isNearHorizontalEdge = centerX < edgeMarginX || centerX > width - edgeMarginX
+            val isNearVerticalEdge = centerY < edgeMarginY || centerY > height - edgeMarginY
+            if (!(isNearHorizontalEdge && isNearVerticalEdge)) return@mapNotNull null
+
             MarkerCandidate(
-                center = Point(rect.x + rect.width / 2.0, rect.y + rect.height / 2.0),
+                center = Point(centerX, centerY),
                 area = area,
                 rect = rect
             )
@@ -335,7 +345,12 @@ class ZipgradeStyleScanner(private val context: Context) {
     /**
      * Template-based bubble detection for known grid layouts
      */
-    private fun detectBubblesRobust(processedMat: Mat, originalBitmap: Bitmap): List<BubbleCandidate> {
+    private fun detectBubblesRobust(
+        processedMat: Mat,
+        originalBitmap: Bitmap,
+        totalQuestions: Int,
+        optionsPerQuestion: Int
+    ): List<BubbleCandidate> {
         Log.d(TAG, "║     Bubble Detection Details:")
         
         val imageWidth = originalBitmap.width
@@ -344,15 +359,26 @@ class ZipgradeStyleScanner(private val context: Context) {
         Log.d(TAG, "║     - Image size: ${imageWidth}x${imageHeight}")
         
         // Use template grid matching for the known IskorKo layout
-        return detectBubblesWithTemplateGrid(originalBitmap, processedMat)
+        return detectBubblesWithTemplateGrid(
+            originalBitmap,
+            processedMat,
+            totalQuestions,
+            optionsPerQuestion
+        )
     }
     
     /**
      * Template grid-based bubble detection - uses known layout to locate bubbles
      */
-    private fun detectBubblesWithTemplateGrid(bitmap: Bitmap, processedMat: Mat): List<BubbleCandidate> {
+    private fun detectBubblesWithTemplateGrid(
+        bitmap: Bitmap,
+        processedMat: Mat,
+        totalQuestions: Int,
+        optionsPerQuestion: Int
+    ): List<BubbleCandidate> {
         val width = bitmap.width
         val height = bitmap.height
+        val expectedBubbles = totalQuestions * optionsPerQuestion
         
         // IskorKo template layout based on the provided images:
         // For 20 questions: 2 columns, 10 rows, 5 options per row
@@ -380,6 +406,7 @@ class ZipgradeStyleScanner(private val context: Context) {
         val grayMat = Mat()
         Utils.bitmapToMat(bitmap, grayMat)
         Imgproc.cvtColor(grayMat, grayMat, Imgproc.COLOR_RGB2GRAY)
+        Imgproc.equalizeHist(grayMat, grayMat)
         
         // For a standard answer sheet, we'll use HoughCircles but filter by expected positions
         Imgproc.GaussianBlur(grayMat, grayMat, org.opencv.core.Size(9.0, 9.0), 2.0)
@@ -396,9 +423,9 @@ class ZipgradeStyleScanner(private val context: Context) {
             circles,
             Imgproc.HOUGH_GRADIENT,
             1.0,
-            (minRadius * 2.0),  // Minimum distance between circles
-            80.0,               // Canny threshold
-            25.0,               // Accumulator threshold (balanced)
+            (expectedBubbleRadius * 1.4),  // Minimum distance between circles
+            60.0,               // Canny threshold
+            18.0,               // Accumulator threshold (more sensitive)
             minRadius,
             maxRadius
         )
@@ -434,7 +461,7 @@ class ZipgradeStyleScanner(private val context: Context) {
         Log.d(TAG, "║     - Bubbles in valid area: ${bubbles.size}")
         
         // If not enough bubbles found, try contour fallback
-        if (bubbles.size < 50) {
+        if (bubbles.size < expectedBubbles * 0.7f) {
             Log.d(TAG, "║     - Trying contour fallback...")
             val contourBubbles = detectBubblesWithContours(processedMat, bitmap)
                 .filter { 
@@ -541,28 +568,45 @@ class ZipgradeStyleScanner(private val context: Context) {
     }
     
     private fun calculateBubbleDarkness(bitmap: Bitmap, centerX: Int, centerY: Int, radius: Int): Float {
-        var darkPixels = 0
-        var totalPixels = 0
-        val r = (radius * 0.8).toInt() // Sample inner 80% to avoid border
-        
-        for (dx in -r..r) {
-            for (dy in -r..r) {
-                if (dx * dx + dy * dy > r * r) continue
-                
+        val innerR = (radius * 0.65f).toInt()
+        val outerR = (radius * 1.05f).toInt()
+
+        var innerSum = 0
+        var innerCount = 0
+        var ringSum = 0
+        var ringCount = 0
+
+        for (dx in -outerR..outerR) {
+            for (dy in -outerR..outerR) {
+                val dist2 = dx * dx + dy * dy
+                if (dist2 > outerR * outerR) continue
+
                 val x = (centerX + dx).coerceIn(0, bitmap.width - 1)
                 val y = (centerY + dy).coerceIn(0, bitmap.height - 1)
-                
-                totalPixels++
+
                 val pixel = bitmap.getPixel(x, y)
-                val brightness = (android.graphics.Color.red(pixel) + 
-                                android.graphics.Color.green(pixel) + 
-                                android.graphics.Color.blue(pixel)) / 3
-                
-                if (brightness < 128) darkPixels++
+                val brightness = (android.graphics.Color.red(pixel) +
+                    android.graphics.Color.green(pixel) +
+                    android.graphics.Color.blue(pixel)) / 3
+
+                if (dist2 <= innerR * innerR) {
+                    innerSum += brightness
+                    innerCount++
+                } else {
+                    ringSum += brightness
+                    ringCount++
+                }
             }
         }
-        
-        return if (totalPixels > 0) darkPixels.toFloat() / totalPixels else 0f
+
+        if (innerCount == 0 || ringCount == 0) return 0f
+
+        val innerAvg = innerSum.toFloat() / innerCount
+        val ringAvg = ringSum.toFloat() / ringCount
+
+        // Darkness = how much darker the fill is compared to the local background
+        val delta = (ringAvg - innerAvg).coerceAtLeast(0f)
+        return (delta / 255f).coerceIn(0f, 1f)
     }
     
     /**

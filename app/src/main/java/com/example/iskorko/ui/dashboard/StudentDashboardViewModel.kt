@@ -15,7 +15,8 @@ data class StudentClassItem(
     val section: String = "",
     val classCode: String = "",
     val professorName: String = "",
-    val examCount: Int = 0
+    val examCount: Int = 0,
+    val archived: Boolean = false
 )
 
 // Student Grade Item
@@ -85,6 +86,9 @@ class StudentDashboardViewModel : ViewModel() {
         private set
     
     var classes = mutableStateOf<List<StudentClassItem>>(emptyList())
+        private set
+
+    var archivedClasses = mutableStateOf<List<StudentClassItem>>(emptyList())
         private set
     
     var isLoading = mutableStateOf(true)
@@ -164,6 +168,7 @@ class StudentDashboardViewModel : ViewModel() {
                 
                 if (classIds.isEmpty()) {
                     classes.value = emptyList()
+                    archivedClasses.value = emptyList()
                     isLoading.value = false
                     return@addSnapshotListener
                 }
@@ -197,13 +202,16 @@ class StudentDashboardViewModel : ViewModel() {
                                             section = doc.getString("section") ?: "",
                                             classCode = doc.getString("classCode") ?: "",
                                             professorName = profDoc.getString("fullName") ?: "Unknown",
-                                            examCount = examSnapshot.size()
+                                            examCount = examSnapshot.size(),
+                                            archived = doc.getBoolean("archived") ?: false
                                         )
                                     )
                                     
                                     processedCount++
                                     if (processedCount == classIds.size) {
-                                        classes.value = loadedClasses.sortedBy { it.className }
+                                        val sortedClasses = loadedClasses.sortedBy { it.className }
+                                        classes.value = sortedClasses.filter { !it.archived }
+                                        archivedClasses.value = sortedClasses.filter { it.archived }
                                         isLoading.value = false
                                     }
                                 }
@@ -215,13 +223,16 @@ class StudentDashboardViewModel : ViewModel() {
                                             section = doc.getString("section") ?: "",
                                             classCode = doc.getString("classCode") ?: "",
                                             professorName = "Unknown",
-                                            examCount = examSnapshot.size()
+                                            examCount = examSnapshot.size(),
+                                            archived = doc.getBoolean("archived") ?: false
                                         )
                                     )
                                     
                                     processedCount++
                                     if (processedCount == classIds.size) {
-                                        classes.value = loadedClasses.sortedBy { it.className }
+                                        val sortedClasses = loadedClasses.sortedBy { it.className }
+                                        classes.value = sortedClasses.filter { !it.archived }
+                                        archivedClasses.value = sortedClasses.filter { it.archived }
                                         isLoading.value = false
                                     }
                                 }
@@ -237,20 +248,25 @@ class StudentDashboardViewModel : ViewModel() {
                                             section = doc.getString("section") ?: "",
                                             classCode = doc.getString("classCode") ?: "",
                                             professorName = profDoc.getString("fullName") ?: "Unknown",
-                                            examCount = 0
+                                            examCount = 0,
+                                            archived = doc.getBoolean("archived") ?: false
                                         )
                                     )
                                     
                                     processedCount++
                                     if (processedCount == classIds.size) {
-                                        classes.value = loadedClasses.sortedBy { it.className }
+                                        val sortedClasses = loadedClasses.sortedBy { it.className }
+                                        classes.value = sortedClasses.filter { !it.archived }
+                                        archivedClasses.value = sortedClasses.filter { it.archived }
                                         isLoading.value = false
                                     }
                                 }
                                 .addOnFailureListener {
                                     processedCount++
                                     if (processedCount == classIds.size) {
-                                        classes.value = loadedClasses.sortedBy { it.className }
+                                        val sortedClasses = loadedClasses.sortedBy { it.className }
+                                        classes.value = sortedClasses.filter { !it.archived }
+                                        archivedClasses.value = sortedClasses.filter { it.archived }
                                         isLoading.value = false
                                     }
                                 }
@@ -259,7 +275,9 @@ class StudentDashboardViewModel : ViewModel() {
                 .addOnFailureListener {
                     processedCount++
                     if (processedCount == classIds.size) {
-                        classes.value = loadedClasses.sortedBy { it.className }
+                        val sortedClasses = loadedClasses.sortedBy { it.className }
+                        classes.value = sortedClasses.filter { !it.archived }
+                        archivedClasses.value = sortedClasses.filter { it.archived }
                         isLoading.value = false
                     }
                 }
@@ -950,7 +968,8 @@ class StudentDashboardViewModel : ViewModel() {
                             message = doc.getString("message") ?: "",
                             timestamp = doc.getLong("timestamp") ?: 0L,
                             isRead = doc.getBoolean("isRead") ?: false,
-                            relatedId = doc.getString("relatedId")
+                            relatedId = doc.getString("relatedId"),
+                            classLabel = doc.getString("classLabel")
                         )
                     } catch (e: Exception) {
                         Log.e("Notifications", "Error parsing notification: ${e.message}")

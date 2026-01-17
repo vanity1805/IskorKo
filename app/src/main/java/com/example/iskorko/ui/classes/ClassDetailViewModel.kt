@@ -3,6 +3,7 @@ package com.example.iskorko.ui.classes
 import android.util.Log
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 
@@ -30,6 +31,9 @@ class ClassDetailViewModel : ViewModel() {
         private set
     
     var classCode = mutableStateOf("")
+        private set
+
+    var archived = mutableStateOf(false)
         private set
     
     var students = mutableStateOf<List<StudentInfo>>(emptyList())
@@ -64,6 +68,7 @@ class ClassDetailViewModel : ViewModel() {
                     className.value = doc.getString("className") ?: ""
                     section.value = doc.getString("section") ?: ""
                     classCode.value = doc.getString("classCode") ?: ""
+                    archived.value = doc.getBoolean("archived") ?: false
                     
                     // Load students
                     val studentIds = doc.get("studentIds") as? List<String> ?: emptyList()
@@ -145,6 +150,135 @@ class ClassDetailViewModel : ViewModel() {
             .addOnFailureListener { e ->
                 // If we can't get exams, still try to delete the class
                 deleteClassDocument(classId, onSuccess, onError)
+            }
+    }
+
+    fun removeStudentFromClass(
+        classId: String,
+        studentId: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        db.collection("classes")
+            .document(classId)
+            .update("studentIds", FieldValue.arrayRemove(studentId))
+            .addOnSuccessListener { onSuccess() }
+            .addOnFailureListener { e ->
+                onError("Failed to remove student: ${e.message}")
+            }
+    }
+
+    fun updateClassInfo(
+        classId: String,
+        updatedName: String,
+        updatedSection: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        db.collection("classes")
+            .document(classId)
+            .update(
+                mapOf(
+                    "className" to updatedName.trim(),
+                    "section" to updatedSection.trim()
+                )
+            )
+            .addOnSuccessListener {
+                onSuccess()
+                notifyClassUpdate(
+                    classId = classId,
+                    title = "Class renamed",
+                    message = "Class updated to $updatedName - $updatedSection"
+                )
+            }
+            .addOnFailureListener { e ->
+                onError("Failed to update class: ${e.message}")
+            }
+    }
+
+    fun archiveClass(classId: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        db.collection("classes")
+            .document(classId)
+            .update(
+                mapOf(
+                    "archived" to true,
+                    "archivedAt" to System.currentTimeMillis()
+                )
+            )
+            .addOnSuccessListener {
+                onSuccess()
+                notifyClassUpdate(
+                    classId = classId,
+                    title = "Class archived",
+                    message = "This class has been archived."
+                )
+            }
+            .addOnFailureListener { e ->
+                onError("Failed to archive class: ${e.message}")
+            }
+    }
+
+    fun unarchiveClass(classId: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        db.collection("classes")
+            .document(classId)
+            .update(
+                mapOf(
+                    "archived" to false,
+                    "archivedAt" to null
+                )
+            )
+            .addOnSuccessListener {
+                onSuccess()
+                notifyClassUpdate(
+                    classId = classId,
+                    title = "Class unarchived",
+                    message = "This class is active again."
+                )
+            }
+            .addOnFailureListener { e ->
+                onError("Failed to unarchive class: ${e.message}")
+            }
+    }
+
+    private fun notifyClassUpdate(classId: String, title: String, message: String) {
+        db.collection("classes")
+            .document(classId)
+            .get()
+            .addOnSuccessListener { doc ->
+                if (!doc.exists()) {
+                    return@addOnSuccessListener
+                }
+
+                val studentIds = doc.get("studentIds") as? List<String> ?: emptyList()
+                val professorId = doc.getString("professorId")
+                val recipientIds = (studentIds + listOfNotNull(professorId)).distinct()
+                val timestamp = System.currentTimeMillis()
+                val name = doc.getString("className") ?: ""
+                val section = doc.getString("section") ?: ""
+                val classLabel = listOf(name, section)
+                    .filter { it.isNotBlank() }
+                    .joinToString(" - ")
+
+                recipientIds.forEach { userId ->
+                    val notificationData = hashMapOf(
+                        "userId" to userId,
+                        "type" to "CLASS_UPDATE",
+                        "title" to title,
+                        "message" to message,
+                        "timestamp" to timestamp,
+                        "isRead" to false,
+                        "relatedId" to classId,
+                        "classLabel" to classLabel
+                    )
+                    db.collection("notifications")
+                        .add(notificationData)
+                        .addOnFailureListener { e ->
+                            Log.e("ClassNotifications", "Failed to notify $userId: ${e.message}")
+                        }
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e("ClassNotifications", "Failed to load class for notifications: ${e.message}")
             }
     }
     

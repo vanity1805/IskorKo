@@ -129,7 +129,7 @@ fun SplashScreen(
             
             // Tagline
             Text(
-                text = "Smart Answer Sheet Scanner",
+                text = "Iskorko, Iskormo!",
                 fontSize = 14.sp,
                 color = Color.Gray,
                 modifier = Modifier.graphicsLayer {

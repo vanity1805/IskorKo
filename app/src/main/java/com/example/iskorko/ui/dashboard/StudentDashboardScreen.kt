@@ -142,6 +142,7 @@ fun StudentDashboardScreen(
             when (selectedTab) {
                 0 -> StudentClassesTab(
                     classes = viewModel.classes.value,
+                    archivedClasses = viewModel.archivedClasses.value,
                     isLoading = viewModel.isLoading.value,
                     navController = navController,
                     onLeaveClass = { classId ->
@@ -193,8 +194,14 @@ fun StudentDashboardScreen(
     
     // Notifications Bottom Sheet
     if (showNotifications) {
+        val classLabelById = remember(viewModel.classes.value, viewModel.archivedClasses.value) {
+            (viewModel.classes.value + viewModel.archivedClasses.value).associate { classItem ->
+                classItem.id to "${classItem.className} - ${classItem.section}"
+            }
+        }
         StudentNotificationsBottomSheet(
             notifications = viewModel.notifications.value,
+            classLabelById = classLabelById,
             onDismiss = { showNotifications = false },
             onMarkAsRead = { viewModel.markNotificationAsRead(it) },
             onMarkAllAsRead = { viewModel.markAllNotificationsAsRead() }
@@ -210,6 +217,7 @@ fun StudentDashboardScreen(
 @Composable
 fun StudentNotificationsBottomSheet(
     notifications: List<NotificationItem>,
+    classLabelById: Map<String, String>,
     onDismiss: () -> Unit,
     onMarkAsRead: (String) -> Unit,
     onMarkAllAsRead: () -> Unit
@@ -278,6 +286,8 @@ fun StudentNotificationsBottomSheet(
                     items(notifications) { notification ->
                         StudentNotificationCard(
                             notification = notification,
+                            classLabel = classLabelById[notification.relatedId]
+                                ?: notification.classLabel,
                             onClick = { onMarkAsRead(notification.id) }
                         )
                     }
@@ -292,6 +302,7 @@ fun StudentNotificationsBottomSheet(
 @Composable
 fun StudentNotificationCard(
     notification: NotificationItem,
+    classLabel: String?,
     onClick: () -> Unit
 ) {
     Card(
@@ -366,7 +377,15 @@ fun StudentNotificationCard(
                 }
                 
                 Spacer(modifier = Modifier.height(4.dp))
-                
+                if (!classLabel.isNullOrBlank()) {
+                    Text(
+                        text = classLabel,
+                        fontSize = 12.sp,
+                        color = Color(0xFF800202),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
                 Text(
                     text = notification.message,
                     fontSize = 12.sp,
@@ -438,6 +457,7 @@ fun JoinClassDialog(
 @Composable
 fun StudentClassesTab(
     classes: List<StudentClassItem>,
+    archivedClasses: List<StudentClassItem>,
     isLoading: Boolean,
     navController: NavHostController,
     onLeaveClass: (String) -> Unit
@@ -483,7 +503,7 @@ fun StudentClassesTab(
             ) {
                 CircularProgressIndicator(color = Color(0xFF800202))
             }
-        } else if (classes.isEmpty()) {
+        } else if (classes.isEmpty() && archivedClasses.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -512,15 +532,46 @@ fun StudentClassesTab(
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(classes) { classItem ->
-                    StudentClassCard(
-                        classItem = classItem,
-                        onClick = {navController.navigate("studentClassView/${classItem.id}")
-                            // TODO: Navigate to student class view
-                            // navController.navigate("studentClassView/${classItem.id}")
-                        },
-                        onLeave = { onLeaveClass(classItem.id) }
-                    )
+                if (classes.isEmpty()) {
+                    item {
+                        Text(
+                            text = "No active classes",
+                            fontSize = 14.sp,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                } else {
+                    items(classes) { classItem ->
+                        StudentClassCard(
+                            classItem = classItem,
+                            onClick = {navController.navigate("studentClassView/${classItem.id}")
+                                // TODO: Navigate to student class view
+                                // navController.navigate("studentClassView/${classItem.id}")
+                            },
+                            onLeave = { onLeaveClass(classItem.id) }
+                        )
+                    }
+                }
+                
+                if (archivedClasses.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Archived Classes",
+                            fontFamily = NeueMachina,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                    items(archivedClasses) { classItem ->
+                        StudentClassCard(
+                            classItem = classItem,
+                            onClick = { navController.navigate("studentClassView/${classItem.id}") },
+                            onLeave = { onLeaveClass(classItem.id) }
+                        )
+                    }
                 }
             }
         }
@@ -1725,6 +1776,7 @@ fun StudentProfileTab(
     var showEditProfileDialog by remember { mutableStateOf(false) }
     var showChangePasswordDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showHelpDialog by remember { mutableStateOf(false) }
     var showLogoutConfirmDialog by remember { mutableStateOf(false) }
     var showPhotoOptionsDialog by remember { mutableStateOf(false) }
     
@@ -2022,7 +2074,7 @@ fun StudentProfileTab(
                     icon = Icons.Filled.Help,
                     title = "Help & Support",
                     subtitle = "Get help with the app",
-                    onClick = { /* TODO */ }
+                    onClick = { showHelpDialog = true }
                 )
             }
         }
@@ -2141,6 +2193,40 @@ fun StudentProfileTab(
     // About Dialog
     if (showAboutDialog) {
         StudentAboutDialog(onDismiss = { showAboutDialog = false })
+    }
+
+    if (showHelpDialog) {
+        AlertDialog(
+            onDismissRequest = { showHelpDialog = false },
+            title = { Text("Help & Support", fontFamily = NeueMachina) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text("For Students", fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Q: My login isn't working.", fontWeight = FontWeight.Bold)
+                    Text("A: Double-check your email and password. If the issue persists, use the \"Forgot Password\" feature to reset your credentials.")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Q: How do I join my professor's class?", fontWeight = FontWeight.Bold)
+                    Text("A: Your professor will provide a unique \"Class Code.\" You must enter this code in the app to be added to the class roster.")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Q: Can I take the exam directly on my phone?", fontWeight = FontWeight.Bold)
+                    Text("A: No. IskorKo is a tool for checking paper-based exams. You will still answer on a physical paper sheet.")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Q: What devices can I use?", fontWeight = FontWeight.Bold)
+                    Text("A: The app is designed for Android devices. It requires Android 10.0 or higher and at least 2 GB of RAM.")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showHelpDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
     }
     
     // Logout Confirmation Dialog
