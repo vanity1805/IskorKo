@@ -437,7 +437,7 @@ fun CameraScannerView(
                     )
                 } else {
                     Text(
-                        text = "Zipgrade-Style Scanner",
+                        text = "IskorKo Scanner",
                         color = Color.White,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
